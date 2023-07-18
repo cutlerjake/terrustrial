@@ -24,3 +24,7 @@ Terrustrial is under active development
  - Gaussian simulation methods (SGS, GSGS, DBSIM)
  - Multi-point simulation methods (SNESIM, FILTERSIM)
  - High-Order simulation methods (HOSIM)
+
+# Performance
+- Improve vectorization
+- Parallelize
