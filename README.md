@@ -26,5 +26,4 @@ Terrustrial is under active development
  - High-Order simulation methods (HOSIM)
 
 # Performance
-- Improve vectorization
-- Parallelize
+- Parallelize where possible
