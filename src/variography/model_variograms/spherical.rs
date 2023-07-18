@@ -1,3 +1,4 @@
+use nalgebra::UnitQuaternion;
 use nalgebra::Vector3;
 
 use crate::spatial_database::coordinate_system::{self, CoordinateSystem};
@@ -11,7 +12,8 @@ pub struct SphericalVariogram {
     range: Vector3<f32>,
     sill: f32,
     nugget: f32,
-    coordinate_system: CoordinateSystem,
+    rotation: UnitQuaternion<f32>,
+    vec_rotation: UnitQuaternion<f32x16>,
 }
 
 impl SphericalVariogram {
@@ -21,17 +23,19 @@ impl SphericalVariogram {
         nugget: f32,
         coordinate_system: CoordinateSystem,
     ) -> Self {
+        let vec_cs = coordinate_system.vectorized_global_to_local_isomety();
         Self {
             range,
             sill,
             nugget,
-            coordinate_system,
+            rotation: coordinate_system.rotation,
+            vec_rotation: vec_cs.rotation,
         }
     }
 
     #[inline(always)]
     pub fn variogram(&self, h: Vector3<f32>) -> f32 {
-        let mut h = h;
+        let mut h = self.rotation.transform_vector(&h);
         // let h = self.coordinate_system.global_to_local(&h.into());
         // let iso_h = f32::sqrt(
         //     (h.x / self.range.x).powi(2)
@@ -58,7 +62,7 @@ impl SphericalVariogram {
 
     #[inline(always)]
     pub fn vectorized_variogram(&self, h: Vector3<f32x16>) -> f32x16 {
-        let mut h = h;
+        let mut h = self.vec_rotation.transform_vector(&h);
         // let h = self.coordinate_system.global_to_local(&h.into());
         // let iso_h = f32::sqrt(
         //     (h.x / self.range.x).powi(2)

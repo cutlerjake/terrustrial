@@ -4,6 +4,7 @@ use nalgebra::{
     Vector3,
 };
 use ndarray::Array3;
+use simba::simd::f32x16;
 use std::f32::consts::PI;
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
@@ -77,9 +78,31 @@ impl CoordinateSystem {
         self.world_to_local.transform_point(point)
     }
 
+    /// Vectorized version of global to local transformation
+    pub fn vectorized_global_to_local_isomety(&self) -> Isometry3<f32x16> {
+        let rot = self.world_to_local.rotation.quaternion().clone();
+        let trans = self.world_to_local.translation;
+
+        let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<f32x16>().into());
+        let simd_trans = trans.vector.cast::<f32x16>().into();
+
+        Isometry3::from_parts(simd_trans, simd_rot)
+    }
+
     /// Convert a point from local to global coordinates
     pub fn local_to_global(&self, point: &Point3<f32>) -> Point3<f32> {
         self.local_to_world.transform_point(point)
+    }
+
+    /// Vectorized version of local to global transformation
+    pub fn vectorized_local_to_global(&self) -> Isometry3<f32x16> {
+        let rot = self.local_to_world.rotation.quaternion().clone();
+        let trans = self.local_to_world.translation;
+
+        let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<f32x16>().into());
+        let simd_trans = trans.vector.cast::<f32x16>().into();
+
+        Isometry3::from_parts(simd_trans, simd_rot)
     }
 }
 
