@@ -1,5 +1,5 @@
 # terrustrial-stats
-Turrustrial-stats is a high performance geostats library written entirely in rust.
+Turrustrial-stats is a geostats library written entirely in rust.
 
 Terrustrial is under active development 
 - breaking changes are expected
