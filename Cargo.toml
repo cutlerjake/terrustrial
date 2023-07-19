@@ -23,4 +23,5 @@ dyn-stack = "0.9.0"
 simba = { version = "0.8.1", features = ["packed_simd"] }
 bitvec = "1.0.1"
 ordered-float = "3.7.0"
-indicatif = "0.17.5"
+indicatif = {version = "0.17.5", features = ["rayon"]}
+rayon = "1.7.0"

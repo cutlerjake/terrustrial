@@ -14,8 +14,9 @@ use dyn_stack::{DynStack, GlobalMemBuffer, ReborrowMut};
 use faer_cholesky::llt::compute;
 use faer_cholesky::llt::solve::solve_in_place_with_conj;
 use faer_core::{mul::inner_prod::inner_prod_with_conj, Conj, Mat, Parallelism};
-use indicatif::ProgressIterator;
+use indicatif::ParallelProgressIterator;
 use nalgebra::{Point3, Vector3};
+use rayon::prelude::*;
 use simba::simd::f32x16;
 
 pub struct SimpleKrigingSystem {
@@ -26,11 +27,19 @@ pub struct SimpleKrigingSystem {
     pub(crate) c_0: f32,
     pub(crate) cholesky_compute_mem: GlobalMemBuffer,
     pub(crate) cholesky_solve_mem: GlobalMemBuffer,
+    pub(crate) n_elems: usize,
     cond_x_buffer: [f32; 16],
     cond_y_buffer: [f32; 16],
     cond_z_buffer: [f32; 16],
     cov_buffer: [f32; 16],
     simd_vec_buffer: Vec<Vector3<f32x16>>,
+}
+
+impl Clone for SimpleKrigingSystem {
+    fn clone(&self) -> Self {
+        let n_elems = self.n_elems;
+        Self::new(n_elems)
+    }
 }
 
 impl SimpleKrigingSystem {
@@ -61,6 +70,7 @@ impl SimpleKrigingSystem {
             c_0: 0.0,
             cholesky_compute_mem,
             cholesky_solve_mem,
+            n_elems,
             cond_x_buffer: [0.0; 16],
             cond_y_buffer: [0.0; 16],
             cond_z_buffer: [0.0; 16],
@@ -345,8 +355,8 @@ pub struct SimpleKriging<S, V> {
 
 impl<G, V> SimpleKriging<G, V>
 where
-    G: GriddedDataBaseInterface<f32>,
-    V: VariogramModel,
+    G: GriddedDataBaseInterface<f32> + Sync,
+    V: VariogramModel + Sync,
 {
     /// Create a new simple kriging estimator with the given parameters
     /// # Arguments
@@ -373,44 +383,37 @@ where
     /// Perform simple kriging at all kriging points
     pub fn krige(&self, kriging_points: &[Point3<f32>]) -> Vec<f32> {
         //construct kriging system
-        let mut kriging_system =
-            SimpleKrigingSystem::new(self.kriging_parameters.max_octant_data * 8);
-        let mut search_ellipsoid = self.search_ellipsoid.clone();
-
-        //storage for kriged values
-        let mut vals = Vec::with_capacity(kriging_points.len());
+        let kriging_system = SimpleKrigingSystem::new(self.kriging_parameters.max_octant_data * 8);
+        let search_ellipsoid = self.search_ellipsoid.clone();
 
         //init query engine
         let qe = self
             .conditioning_data
             .init_query_engine_for_geometry(search_ellipsoid);
 
-        //for each point to be kriged
-        let mut curr = 0.0;
-        for (i, kriging_point) in kriging_points.iter().enumerate().progress() {
-            // if i as f32 / kriging_points.len() as f32 > curr {
-            //     println!("{}%", (curr * 100.0) as usize);
-            //     curr += 0.01;
-            // }
+        kriging_points
+            .par_iter()
+            .progress()
+            .map_with(kriging_system.clone(), |local_system, kriging_point| {
+                //let mut local_system = kriging_system.clone();
+                //get nearest points and values
+                let (cond_points, cond_values) = qe.nearest_points_and_values(
+                    kriging_point,
+                    self.kriging_parameters.max_octant_data,
+                    &self.conditioning_data,
+                );
 
-            let (cond_points, cond_values) = qe.nearest_points_and_values(
-                kriging_point,
-                self.kriging_parameters.max_octant_data,
-                &self.conditioning_data,
-            );
+                //build kriging system for point
+                local_system.build_system(
+                    &cond_points,
+                    cond_values.as_slice(),
+                    kriging_point,
+                    &self.variogram_model,
+                );
 
-            //build kriging system for point
-            kriging_system.build_system(
-                &cond_points,
-                cond_values.as_slice(),
-                kriging_point,
-                &self.variogram_model,
-            );
-
-            vals.push(kriging_system.estimate());
-        }
-
-        vals
+                local_system.estimate()
+            })
+            .collect::<Vec<f32>>()
     }
 }
 
