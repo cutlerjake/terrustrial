@@ -25,5 +25,3 @@ Terrustrial is under active development
  - Multi-point simulation methods (SNESIM, FILTERSIM)
  - High-Order simulation methods (HOSIM)
 
-# Performance
-- Parallelize where possible
