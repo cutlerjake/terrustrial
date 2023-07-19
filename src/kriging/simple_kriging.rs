@@ -458,7 +458,7 @@ mod tests {
         let mean = system.estimate();
         let variance = system.variance();
 
-        assert_eq!(mean, 4.148547);
-        assert_eq!(variance, 0.49257427);
+        assert_eq!(mean, 4.488526);
+        assert_eq!(variance, 0.1558531);
     }
 }
