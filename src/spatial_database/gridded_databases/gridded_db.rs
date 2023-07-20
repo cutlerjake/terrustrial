@@ -383,4 +383,15 @@ where
             },
         )
     }
+
+    fn data_and_inds(&self) -> (Vec<T>, Vec<[usize; 3]>) {
+        self.grid
+            .indexed_iter()
+            .map(|(ind, val)| (val, [ind.0, ind.1, ind.2]))
+            .unzip()
+    }
+
+    fn set_data_at_ind(&mut self, ind: &[usize; 3], data: T) {
+        self.grid[[ind[0], ind[1], ind[2]]] = data;
+    }
 }

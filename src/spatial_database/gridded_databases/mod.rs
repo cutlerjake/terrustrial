@@ -30,4 +30,6 @@ pub trait GriddedDataBaseInterface<T> {
     fn inds_in_bounding_box(&self, bounding_box: &Aabb) -> Vec<[usize; 3]>;
 
     fn data_and_points(&self) -> (Vec<T>, Vec<Point3<f32>>);
+    fn data_and_inds(&self) -> (Vec<T>, Vec<[usize; 3]>);
+    fn set_data_at_ind(&mut self, ind: &[usize; 3], data: T);
 }

@@ -9,6 +9,7 @@ use self::{coordinate_system::CoordinateSystem, gridded_databases::GriddedDataBa
 
 pub mod coordinate_system;
 pub mod gridded_databases;
+pub mod normalized;
 
 pub trait SpatialDataBase<T> {
     type INDEX: Debug;
@@ -16,6 +17,8 @@ pub trait SpatialDataBase<T> {
     fn point_at_ind(&self, inds: &Self::INDEX) -> Point3<f32>;
     fn data_at_ind(&self, ind: &Self::INDEX) -> Option<T>;
     fn data_and_points(&self) -> (Vec<T>, Vec<Point3<f32>>);
+    fn data_and_inds(&self) -> (Vec<T>, Vec<Self::INDEX>);
+    fn set_data_at_ind(&mut self, ind: &Self::INDEX, data: T);
 }
 
 impl<T, G> SpatialDataBase<T> for G
@@ -39,16 +42,14 @@ where
     fn data_and_points(&self) -> (Vec<T>, Vec<Point3<f32>>) {
         <Self as GriddedDataBaseInterface<T>>::data_and_points(self)
     }
-}
 
-pub trait SpatialQuery<SDB, T, G>
-where
-    SDB: SpatialDataBase<T>,
-{
-    type PARAMETERS;
-    fn new(db: &SDB, geometry: G, parameters: Self::PARAMETERS) -> Self;
+    fn data_and_inds(&self) -> (Vec<T>, Vec<Self::INDEX>) {
+        <Self as GriddedDataBaseInterface<T>>::data_and_inds(self)
+    }
 
-    fn query(&self, point: &Point3<f32>) -> (Vec<T>, Vec<Point3<f32>>);
+    fn set_data_at_ind(&mut self, ind: &Self::INDEX, data: T) {
+        <Self as GriddedDataBaseInterface<T>>::set_data_at_ind(self, ind, data)
+    }
 }
 
 pub trait SpatialQueryable<T> {

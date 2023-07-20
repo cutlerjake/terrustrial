@@ -138,4 +138,17 @@ where
             .map(|(val, point)| (val.unwrap(), point))
             .unzip()
     }
+
+    fn data_and_inds(&self) -> (Vec<T>, Vec<[usize; 3]>) {
+        self.raw_grid
+            .grid
+            .indexed_iter()
+            .filter(|(_, val)| val.is_some())
+            .map(|(ind, val)| (val.unwrap(), [ind.0, ind.1, ind.2]))
+            .unzip()
+    }
+
+    fn set_data_at_ind(&mut self, ind: &[usize; 3], data: T) {
+        self.raw_grid.set_data_at_ind(ind, Some(data));
+    }
 }

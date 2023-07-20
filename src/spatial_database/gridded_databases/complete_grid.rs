@@ -136,4 +136,16 @@ where
     fn data_and_points(&self) -> (Vec<T>, Vec<Point3<f32>>) {
         self.raw_grid.data_and_points()
     }
+
+    fn data_and_inds(&self) -> (Vec<T>, Vec<[usize; 3]>) {
+        self.raw_grid
+            .grid
+            .indexed_iter()
+            .map(|(ind, val)| (val, [ind.0, ind.1, ind.2]))
+            .unzip()
+    }
+
+    fn set_data_at_ind(&mut self, ind: &[usize; 3], data: T) {
+        self.raw_grid.set_data_at_ind(ind, data)
+    }
 }
