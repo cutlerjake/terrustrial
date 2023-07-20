@@ -52,6 +52,7 @@ where
     }
 }
 
-pub trait SpatialQueryable<T> {
+pub trait SpatialQueryable<T, G> {
     fn query(&self, point: &Point3<f32>) -> (Vec<T>, Vec<Point3<f32>>);
+    fn geometry(&self) -> &G;
 }

@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use crate::{
     kriging::KrigingParameters, spatial_database::SpatialQueryable,
     variography::model_variograms::VariogramModel,
@@ -12,19 +14,19 @@ use rayon::prelude::*;
 use simba::simd::f32x16;
 
 pub struct SimpleKrigingSystem {
-    pub(crate) cond_cov_mat: Mat<f32>,
-    pub(crate) krig_point_cov_vec: Mat<f32>,
-    pub(crate) weights: Mat<f32>,
-    pub(crate) values: Mat<f32>,
-    pub(crate) c_0: f32,
-    pub(crate) cholesky_compute_mem: GlobalMemBuffer,
-    pub(crate) cholesky_solve_mem: GlobalMemBuffer,
-    pub(crate) n_elems: usize,
-    cond_x_buffer: [f32; 16],
-    cond_y_buffer: [f32; 16],
-    cond_z_buffer: [f32; 16],
-    cov_buffer: [f32; 16],
-    simd_vec_buffer: Vec<Vector3<f32x16>>,
+    pub cond_cov_mat: Mat<f32>,
+    pub krig_point_cov_vec: Mat<f32>,
+    pub weights: Mat<f32>,
+    pub values: Mat<f32>,
+    pub c_0: f32,
+    pub cholesky_compute_mem: GlobalMemBuffer,
+    pub cholesky_solve_mem: GlobalMemBuffer,
+    pub n_elems: usize,
+    pub cond_x_buffer: [f32; 16],
+    pub cond_y_buffer: [f32; 16],
+    pub cond_z_buffer: [f32; 16],
+    pub cov_buffer: [f32; 16],
+    pub simd_vec_buffer: Vec<Vector3<f32x16>>,
 }
 
 impl Clone for SimpleKrigingSystem {
@@ -40,7 +42,7 @@ impl SimpleKrigingSystem {
     /// * `n_elems` - The maximum number of elements in the system
     /// # Returns
     /// * `Self` - The new simple kriging system
-    fn new(n_elems: usize) -> Self {
+    pub fn new(n_elems: usize) -> Self {
         let cholesky_compute_mem = GlobalMemBuffer::new(
             faer_cholesky::llt::compute::cholesky_in_place_req::<f32>(
                 n_elems,
@@ -76,7 +78,7 @@ impl SimpleKrigingSystem {
     /// * `cond_points` - The conditioning points for the kriging point
     /// * `kriging_point` - The kriging point
     /// * `vgram` - The variogram model
-    fn build_covariance_matrix_and_vector<V>(
+    pub fn build_covariance_matrix_and_vector<V>(
         &mut self,
         cond_points: &[Point3<f32>],
         kriging_point: &Point3<f32>,
@@ -107,7 +109,7 @@ impl SimpleKrigingSystem {
     /// This function is unsafe because it does not check that the number of elements is less than the maximum number of elements
     /// panics will occur if the number of elements is greater than the maximum number of elements
     #[inline(always)]
-    fn set_dim(&mut self, n_elems: usize) {
+    pub fn set_dim(&mut self, n_elems: usize) {
         unsafe { self.cond_cov_mat.set_dims(n_elems, n_elems) };
         unsafe { self.krig_point_cov_vec.set_dims(n_elems, 1) };
         unsafe { self.weights.set_dims(n_elems, 1) };
@@ -119,7 +121,7 @@ impl SimpleKrigingSystem {
     /// * `cond_points` - The conditioning points for the kriging point
     /// * 'vgram' - The variogram model
     #[inline(always)]
-    fn vectorized_build_covariance_matrix<V>(&mut self, cond_points: &[Point3<f32>], vgram: &V)
+    pub fn vectorized_build_covariance_matrix<V>(&mut self, cond_points: &[Point3<f32>], vgram: &V)
     where
         V: VariogramModel,
     {
@@ -181,7 +183,7 @@ impl SimpleKrigingSystem {
     /// * `kriging_point` - The kriging point
     /// * 'vgram' - The variogram model
     #[inline(always)]
-    fn vectorized_build_covariance_vector<V>(
+    pub fn vectorized_build_covariance_vector<V>(
         &mut self,
         cond_points: &[Point3<f32>],
         kriging_point: &Point3<f32>,
@@ -243,7 +245,7 @@ impl SimpleKrigingSystem {
     /// * `kriging_point` - The kriging point
     /// * 'vgram' - The variogram model
     #[inline(always)]
-    fn vectorized_build_covariance_matrix_and_vector<V>(
+    pub fn vectorized_build_covariance_matrix_and_vector<V>(
         &mut self,
         cond_points: &[Point3<f32>],
         kriging_point: &Point3<f32>,
@@ -257,7 +259,7 @@ impl SimpleKrigingSystem {
 
     /// Compute SK weights
     #[inline(always)]
-    fn compute_weights(&mut self) {
+    pub fn compute_weights(&mut self) {
         //create dynstack
         let mut cholesky_compute_stack = DynStack::new(&mut self.cholesky_compute_mem);
         let mut cholesky_solve_stack = DynStack::new(&mut self.cholesky_solve_mem);
@@ -338,16 +340,21 @@ impl SimpleKrigingSystem {
     }
 }
 
-pub struct SimpleKriging<S, V> {
+pub struct SimpleKriging<S, V, G>
+where
+    S: SpatialQueryable<f32, G>,
+{
     conditioning_data: S,
     variogram_model: V,
     kriging_parameters: KrigingParameters,
+    phantom: PhantomData<G>,
 }
 
-impl<S, V> SimpleKriging<S, V>
+impl<S, V, G> SimpleKriging<S, V, G>
 where
-    S: SpatialQueryable<f32> + Sync,
+    S: SpatialQueryable<f32, G> + Sync,
     V: VariogramModel + Sync,
+    G: Sync,
 {
     /// Create a new simple kriging estimator with the given parameters
     /// # Arguments
@@ -366,6 +373,7 @@ where
             conditioning_data,
             variogram_model,
             kriging_parameters,
+            phantom: PhantomData,
         }
     }
 

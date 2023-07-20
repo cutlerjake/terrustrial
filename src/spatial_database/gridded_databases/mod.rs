@@ -5,6 +5,8 @@ use crate::geometry::Geometry;
 
 use self::gridded_data_base_queary_engine::GriddedDataBaseOctantQueryEngine;
 
+use super::coordinate_system::{CoordinateSystem, GridSpacing};
+
 pub mod complete_grid;
 pub mod gridded_data_base_queary_engine;
 pub mod gridded_db;
@@ -32,4 +34,7 @@ pub trait GriddedDataBaseInterface<T> {
     fn data_and_points(&self) -> (Vec<T>, Vec<Point3<f32>>);
     fn data_and_inds(&self) -> (Vec<T>, Vec<[usize; 3]>);
     fn set_data_at_ind(&mut self, ind: &[usize; 3], data: T);
+    fn shape(&self) -> [usize; 3];
+    fn grid_spacing(&self) -> GridSpacing;
+    fn coordinate_system(&self) -> CoordinateSystem;
 }

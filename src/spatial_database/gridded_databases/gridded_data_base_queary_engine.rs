@@ -105,9 +105,99 @@ where
 
         (points, values)
     }
+
+    /// Get the nearest points and values to a point in the geometry
+    /// # Arguments
+    /// * `point` - The point to get the nearest points and values for
+    /// * `octant_size` - The number of points to get from each octant
+    /// * `gdb` - The gridded database to use for the query engine
+    ///     * must have same grid size and orientation as gdb used for construction of query engine
+    pub fn nearest_points_and_values_masked<F>(
+        &self,
+        point: &Point3<f32>,
+        mask: F,
+    ) -> (Vec<Point3<f32>>, Vec<T>)
+    where
+        F: Fn([usize; 3]) -> bool,
+    {
+        let _ = self.geometry;
+        //this only works if the grid ang geometry have similar orientation
+        //TODO: convert to high ind relative to geometry rotation
+        let point_ind = self.db.coord_to_high_ind(point).map(|x| x as usize);
+        let mut points = Vec::<Point3<f32>>::new();
+        let mut values = Vec::with_capacity(self.max_octant_size * 8);
+        for offsets in self.octant_offsets.iter() {
+            let mut oct_cnt = 0;
+            for offset in offsets {
+                let Some(ind) = self.db.offset_ind(point_ind, *offset) else {
+                    continue;
+                };
+
+                if !mask(ind) {
+                    continue;
+                }
+                if let Some(v) = self.db.data_at_ind(&ind) {
+                    let p = self.db.ind_to_point(&ind.map(|x| x as isize));
+                    points.push(p);
+                    values.push(v);
+                    oct_cnt += 1;
+                    if oct_cnt == self.max_octant_size {
+                        break;
+                    }
+                }
+            }
+        }
+
+        (points, values)
+    }
+
+    /// Get the nearest points and values to a point in the geometry
+    /// # Arguments
+    /// * `point` - The point to get the nearest points and values for
+    /// * `octant_size` - The number of points to get from each octant
+    /// * `gdb` - The gridded database to use for the query engine
+    ///     * must have same grid size and orientation as gdb used for construction of query engine
+    pub fn nearest_inds_and_points_masked<F>(
+        &self,
+        point: &Point3<f32>,
+        mask: F,
+    ) -> (Vec<[usize; 3]>, Vec<Point3<f32>>)
+    where
+        F: Fn([usize; 3]) -> bool,
+    {
+        let _ = self.geometry;
+        //this only works if the grid ang geometry have similar orientation
+        //TODO: convert to high ind relative to geometry rotation
+        let point_ind = self.db.coord_to_high_ind(point).map(|x| x as usize);
+        let mut inds = Vec::new();
+        let mut points = Vec::<Point3<f32>>::new();
+        for offsets in self.octant_offsets.iter() {
+            let mut oct_cnt = 0;
+            for offset in offsets {
+                let Some(ind) = self.db.offset_ind(point_ind, *offset) else {
+                    continue;
+                };
+
+                if !mask(ind) {
+                    continue;
+                }
+                if let Some(v) = self.db.data_at_ind(&ind) {
+                    let p = self.db.ind_to_point(&ind.map(|x| x as isize));
+                    inds.push(ind);
+                    points.push(p);
+                    oct_cnt += 1;
+                    if oct_cnt == self.max_octant_size {
+                        break;
+                    }
+                }
+            }
+        }
+
+        (inds, points)
+    }
 }
 
-impl<'a, G, GDB, T> SpatialQueryable<T> for GriddedDataBaseOctantQueryEngine<'a, G, GDB, T>
+impl<'a, G, GDB, T> SpatialQueryable<T, G> for GriddedDataBaseOctantQueryEngine<'a, G, GDB, T>
 where
     G: Geometry,
     GDB: GriddedDataBaseInterface<T>,
@@ -115,6 +205,10 @@ where
     fn query(&self, point: &Point3<f32>) -> (Vec<T>, Vec<Point3<f32>>) {
         let (points, values) = self.nearest_points_and_values(point);
         (values, points)
+    }
+
+    fn geometry(&self) -> &G {
+        &self.geometry
     }
 }
 

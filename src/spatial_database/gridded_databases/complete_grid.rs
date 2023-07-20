@@ -2,7 +2,7 @@ use std::{collections::HashMap, error, mem::MaybeUninit, str::FromStr};
 
 use itertools::izip;
 use nalgebra::Point3;
-use ndarray::Array3;
+use ndarray::{Array3, IntoDimension};
 use parry3d::bounding_volume::Aabb;
 
 use crate::{
@@ -147,5 +147,18 @@ where
 
     fn set_data_at_ind(&mut self, ind: &[usize; 3], data: T) {
         self.raw_grid.set_data_at_ind(ind, data)
+    }
+
+    fn shape(&self) -> [usize; 3] {
+        let shape = self.raw_grid.grid.shape();
+        [shape[0], shape[1], shape[2]]
+    }
+
+    fn grid_spacing(&self) -> GridSpacing {
+        self.raw_grid.grid_spacing
+    }
+
+    fn coordinate_system(&self) -> CoordinateSystem {
+        self.raw_grid.coordinate_system
     }
 }
