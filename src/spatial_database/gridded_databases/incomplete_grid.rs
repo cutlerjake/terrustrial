@@ -17,7 +17,7 @@ use super::{
 
 /// Grid implementation for handling incomplete grids.
 pub struct InCompleteGriddedDataBase<T> {
-    pub grid: RawGriddedDataBase<Option<T>>,
+    pub raw_grid: RawGriddedDataBase<Option<T>>,
 }
 
 impl<T> InCompleteGriddedDataBase<T> {
@@ -27,7 +27,7 @@ impl<T> InCompleteGriddedDataBase<T> {
         coordinate_system: CoordinateSystem,
     ) -> Self {
         let grid = RawGriddedDataBase::new(grid, block_size, coordinate_system);
-        Self { grid }
+        Self { raw_grid: grid }
     }
 }
 
@@ -97,25 +97,25 @@ where
     T: Copy,
 {
     fn coord_to_high_ind(&self, point: &Point3<f32>) -> [isize; 3] {
-        self.grid.coord_to_high_ind_with_negative(point)
+        self.raw_grid.coord_to_high_ind_with_negative(point)
     }
 
     fn offset_ind(&self, ind: [usize; 3], offset: [isize; 3]) -> Option<[usize; 3]> {
-        self.grid.offset_ind(ind, offset)
+        self.raw_grid.offset_ind(ind, offset)
     }
     fn data_at_ind(&self, ind: &[usize; 3]) -> Option<T> {
-        self.grid.data_at_ind(ind).unwrap_or(None)
+        self.raw_grid.data_at_ind(ind).unwrap_or(None)
     }
 
     fn ind_to_point(&self, ind: &[isize; 3]) -> Point3<f32> {
-        self.grid.ind_to_point_with_negative(*ind)
+        self.raw_grid.ind_to_point_with_negative(*ind)
     }
 
     fn offsets_from_ind_in_geometry<G>(&self, ind: &[usize; 3], geometry: &G) -> Vec<[isize; 3]>
     where
         G: Geometry,
     {
-        self.grid._offsets_from_ind_in_geometry(*ind, geometry)
+        self.raw_grid._offsets_from_ind_in_geometry(*ind, geometry)
     }
 
     // fn init_query_engine_for_geometry<G: Geometry>(
@@ -126,11 +126,11 @@ where
     // }
 
     fn inds_in_bounding_box(&self, aabb: &Aabb) -> Vec<[usize; 3]> {
-        self.grid.inds_in_bounding_box(aabb)
+        self.raw_grid.inds_in_bounding_box(aabb)
     }
 
     fn data_and_points(&self) -> (Vec<T>, Vec<Point3<f32>>) {
-        let (data, points) = self.grid.data_and_points();
+        let (data, points) = self.raw_grid.data_and_points();
 
         data.iter()
             .zip(points)
