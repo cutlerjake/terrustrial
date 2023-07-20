@@ -144,15 +144,16 @@ where
                 //compute weights of kriging system
                 local_system.compute_weights();
                 let weights = local_system.weights.clone();
+                let cov_vec = local_system.krig_point_cov_vec.clone();
 
-                (ind, kriging_point, cond_values, sim_inds, weights)
+                (ind, kriging_point, cond_values, sim_inds, weights, cov_vec)
             })
             .collect::<Vec<_>>();
 
         println!("POPULATING GRID");
         let mut rng = rand::thread_rng();
         sequential_data.into_iter().for_each(
-            |(ind, kriging_point, cond_values, sim_inds, weights)| {
+            |(ind, kriging_point, cond_values, sim_inds, weights, cov_vec)| {
                 //get simulation values
                 let sim_values = sim_inds
                     .iter()
@@ -176,6 +177,7 @@ where
                     unsafe { kriging_system.values.write_unchecked(i, 0, *values[i]) };
                 }
                 kriging_system.weights = weights;
+                kriging_system.krig_point_cov_vec = cov_vec;
 
                 //compute mean
                 let mean = kriging_system.estimate();
