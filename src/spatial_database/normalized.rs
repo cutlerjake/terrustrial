@@ -1,9 +1,56 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    iter,
+    ops::{Deref, DerefMut},
+};
 
 use num_traits::Float;
 
 use super::SpatialDataBase;
 
+pub trait Normalize<T> {
+    fn normalize(&mut self) -> (T, T);
+    fn back_transform(&mut self, mean: T, std_dev: T);
+}
+
+impl<SDB, T> Normalize<T> for SDB
+where
+    SDB: SpatialDataBase<T>,
+    T: Float + iter::Sum,
+{
+    fn normalize(&mut self) -> (T, T) {
+        let (data, inds) = self.data_and_inds();
+        let mean = data.iter().map(|v| *v).sum::<T>() / T::from(data.len()).unwrap();
+        let variance =
+            data.iter().map(|d| (*d - mean).powi(2)).sum::<T>() / T::from(data.len()).unwrap();
+
+        let std_dev = T::sqrt(variance);
+
+        let normalized_data = data
+            .iter()
+            .map(|d| (*d - mean) / std_dev)
+            .collect::<Vec<_>>();
+
+        inds.iter().zip(normalized_data).for_each(|(ind, data)| {
+            self.set_data_at_ind(ind, data);
+        });
+
+        (mean, std_dev)
+    }
+
+    fn back_transform(&mut self, mean: T, std_dev: T) {
+        let (data, inds) = self.data_and_inds();
+
+        let unnormalized_data = data.iter().map(|d| *d * std_dev + mean).collect::<Vec<_>>();
+
+        inds.iter().zip(unnormalized_data).for_each(|(ind, data)| {
+            self.set_data_at_ind(ind, data);
+        });
+    }
+}
+
+// Would prefer to use a normalized wrapper type
+// but auto implementing inner trait methods is not possible
+// will use Normalize trait instead for now
 pub struct NormalizedSpatialDataBase<SDB, T>
 where
     SDB: SpatialDataBase<T>,
