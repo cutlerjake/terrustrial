@@ -17,7 +17,7 @@ use super::{
 
 /// Grid implementation for handling incomplete grids.
 pub struct InCompleteGriddedDataBase<T> {
-    pub(crate) grid: RawGriddedDataBase<Option<T>>,
+    pub grid: RawGriddedDataBase<Option<T>>,
 }
 
 impl<T> InCompleteGriddedDataBase<T> {
