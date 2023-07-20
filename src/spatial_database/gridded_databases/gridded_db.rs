@@ -8,7 +8,7 @@ use crate::{
     spatial_database::coordinate_system::{octant, CoordinateSystem, GridSpacing},
 };
 
-use super::{GriddedDataBaseInterface, GriddedDataBaseQueryEngine};
+use super::{GriddedDataBaseInterface, GriddedDataBaseOctantQueryEngine};
 
 /// A raw gridded database
 /// # Members
@@ -368,12 +368,12 @@ where
         self._offsets_from_ind_in_geometry(*ind, geometry)
     }
 
-    fn init_query_engine_for_geometry<G: Geometry>(
-        &self,
-        geometry: G,
-    ) -> GriddedDataBaseQueryEngine<G> {
-        GriddedDataBaseQueryEngine::new(geometry, self)
-    }
+    // fn init_query_engine_for_geometry<G: Geometry>(
+    //     &self,
+    //     geometry: G,
+    // ) -> GriddedDataBaseOctantQueryEngine<G> {
+    //     GriddedDataBaseOctantQueryEngine::new(geometry, self)
+    // }
 
     fn inds_in_bounding_box(&self, bounding_box: &Aabb) -> Vec<[usize; 3]> {
         self._inds_in_bounding_box(bounding_box)

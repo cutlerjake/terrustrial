@@ -41,10 +41,16 @@ where
     }
 }
 
-pub trait QueryEngineInterface {
-    fn nearest_points_and_values<T>(
-        &self,
-        point: &Point3<f32>,
-        num_points: usize,
-    ) -> (Vec<Point3<f32>>, Vec<&T>);
+pub trait SpatialQuery<SDB, T, G>
+where
+    SDB: SpatialDataBase<T>,
+{
+    type PARAMETERS;
+    fn new(db: &SDB, geometry: G, parameters: Self::PARAMETERS) -> Self;
+
+    fn query(&self, point: &Point3<f32>) -> (Vec<T>, Vec<Point3<f32>>);
+}
+
+pub trait SpatialQueryable<T> {
+    fn query(&self, point: &Point3<f32>) -> (Vec<T>, Vec<Point3<f32>>);
 }

@@ -3,9 +3,10 @@ use crate::{
     kriging::KrigingParameters,
     spatial_database::{
         gridded_databases::{
-            gridded_data_base_queary_engine::GriddedDataBaseQueryEngine, GriddedDataBaseInterface,
+            gridded_data_base_queary_engine::GriddedDataBaseOctantQueryEngine,
+            GriddedDataBaseInterface,
         },
-        SpatialDataBase,
+        SpatialDataBase, SpatialQueryable,
     },
     variography::model_variograms::VariogramModel,
 };
@@ -349,13 +350,12 @@ impl SimpleKrigingSystem {
 pub struct SimpleKriging<S, V> {
     conditioning_data: S,
     variogram_model: V,
-    search_ellipsoid: Ellipsoid,
     kriging_parameters: KrigingParameters,
 }
 
-impl<G, V> SimpleKriging<G, V>
+impl<S, V> SimpleKriging<S, V>
 where
-    G: GriddedDataBaseInterface<f32> + Sync,
+    S: SpatialQueryable<f32> + Sync,
     V: VariogramModel + Sync,
 {
     /// Create a new simple kriging estimator with the given parameters
@@ -367,15 +367,13 @@ where
     /// # Returns
     /// A new simple kriging estimator
     pub fn new(
-        conditioning_data: G,
+        conditioning_data: S,
         variogram_model: V,
-        search_ellipsoid: Ellipsoid,
         kriging_parameters: KrigingParameters,
     ) -> Self {
         Self {
             conditioning_data,
             variogram_model,
-            search_ellipsoid,
             kriging_parameters,
         }
     }
@@ -384,12 +382,6 @@ where
     pub fn krige(&self, kriging_points: &[Point3<f32>]) -> Vec<f32> {
         //construct kriging system
         let kriging_system = SimpleKrigingSystem::new(self.kriging_parameters.max_octant_data * 8);
-        let search_ellipsoid = self.search_ellipsoid.clone();
-
-        //init query engine
-        let qe = self
-            .conditioning_data
-            .init_query_engine_for_geometry(search_ellipsoid);
 
         kriging_points
             .par_iter()
@@ -397,11 +389,7 @@ where
             .map_with(kriging_system.clone(), |local_system, kriging_point| {
                 //let mut local_system = kriging_system.clone();
                 //get nearest points and values
-                let (cond_points, cond_values) = qe.nearest_points_and_values(
-                    kriging_point,
-                    self.kriging_parameters.max_octant_data,
-                    &self.conditioning_data,
-                );
+                let (cond_values, cond_points) = self.conditioning_data.query(kriging_point);
 
                 //build kriging system for point
                 local_system.build_system(

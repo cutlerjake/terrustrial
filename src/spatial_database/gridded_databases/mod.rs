@@ -3,7 +3,7 @@ use parry3d::bounding_volume::Aabb;
 
 use crate::geometry::Geometry;
 
-use self::gridded_data_base_queary_engine::GriddedDataBaseQueryEngine;
+use self::gridded_data_base_queary_engine::GriddedDataBaseOctantQueryEngine;
 
 pub mod complete_grid;
 pub mod gridded_data_base_queary_engine;
@@ -22,10 +22,10 @@ pub trait GriddedDataBaseInterface<T> {
 
     //fn signed_ind_to_point(&self, ind: &[isize; 3]) -> Point3<f32>;
 
-    fn init_query_engine_for_geometry<G: Geometry>(
-        &self,
-        geometry: G,
-    ) -> GriddedDataBaseQueryEngine<G>;
+    // fn init_query_engine_for_geometry<G: Geometry>(
+    //     &self,
+    //     geometry: G,
+    // ) -> GriddedDataBaseOctantQueryEngine<G>;
 
     fn inds_in_bounding_box(&self, bounding_box: &Aabb) -> Vec<[usize; 3]>;
 

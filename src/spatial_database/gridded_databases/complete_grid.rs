@@ -8,7 +8,9 @@ use crate::{
     spatial_database::coordinate_system::{octant, CoordinateSystem, GridSpacing},
 };
 
-use super::{gridded_db::RawGriddedDataBase, GriddedDataBaseInterface, GriddedDataBaseQueryEngine};
+use super::{
+    gridded_db::RawGriddedDataBase, GriddedDataBaseInterface, GriddedDataBaseOctantQueryEngine,
+};
 
 /// Grid implementation for hgandling complete grids.
 pub struct CompleteGriddedDataBase<T> {
@@ -52,12 +54,12 @@ where
         self.grid.offsets_from_ind_in_geometry(ind, geometry)
     }
 
-    fn init_query_engine_for_geometry<G: Geometry>(
-        &self,
-        geometry: G,
-    ) -> GriddedDataBaseQueryEngine<G> {
-        GriddedDataBaseQueryEngine::new(geometry, self)
-    }
+    // fn init_query_engine_for_geometry<G: Geometry>(
+    //     &self,
+    //     geometry: G,
+    // ) -> GriddedDataBaseOctantQueryEngine<G> {
+    //     GriddedDataBaseOctantQueryEngine::new(geometry, self)
+    // }
 
     fn inds_in_bounding_box(&self, bounding_box: &Aabb) -> Vec<[usize; 3]> {
         self.grid.inds_in_bounding_box(bounding_box)
