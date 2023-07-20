@@ -19,9 +19,9 @@ use super::GriddedDataBaseInterface;
 /// * `coordinate_system` - Coordinate system of the grid (Location and orientation of the grid)
 ///
 pub struct RawGriddedDataBase<T> {
-    pub(crate) grid: Array3<T>,
-    pub(crate) grid_spacing: GridSpacing,
-    pub(crate) coordinate_system: CoordinateSystem,
+    pub grid: Array3<T>,
+    pub grid_spacing: GridSpacing,
+    pub coordinate_system: CoordinateSystem,
 }
 
 impl<T> RawGriddedDataBase<T> {
