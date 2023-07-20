@@ -1,3 +1,6 @@
+use std::{collections::HashMap, error, mem::MaybeUninit, str::FromStr};
+
+use itertools::izip;
 use nalgebra::Point3;
 use ndarray::Array3;
 use ordered_float::OrderedFloat;
@@ -25,6 +28,67 @@ impl<T> InCompleteGriddedDataBase<T> {
     ) -> Self {
         let grid = RawGriddedDataBase::new(grid, block_size, coordinate_system);
         Self { grid }
+    }
+}
+
+impl<T> InCompleteGriddedDataBase<T>
+where
+    T: Copy + FromStr,
+    <T as FromStr>::Err: std::error::Error + 'static,
+{
+    pub fn from_csv_index(
+        csv_path: &str,
+        i_col: &str,
+        j_col: &str,
+        k_col: &str,
+        value_col: &str,
+        grid_spacing: GridSpacing,
+        coordinate_system: CoordinateSystem,
+    ) -> Result<Self, Box<dyn error::Error>> {
+        //storage for data
+        let mut i_vec = Vec::new();
+        let mut j_vec = Vec::new();
+        let mut k_vec = Vec::new();
+        let mut value_vec = Vec::new();
+
+        //read data from csv
+        let mut rdr = csv::Reader::from_path(csv_path)?;
+        for result in rdr.deserialize() {
+            let record: HashMap<String, String> = result?;
+
+            let i = record[i_col].parse::<usize>()?;
+            let j = record[j_col].parse::<usize>()?;
+            let k = record[k_col].parse::<usize>()?;
+            let value = record[value_col].parse::<T>()?;
+
+            i_vec.push(i);
+            j_vec.push(j);
+            k_vec.push(k);
+            value_vec.push(value);
+        }
+
+        //compute grid size
+        let i_max = i_vec.iter().max().unwrap();
+        let j_max = j_vec.iter().max().unwrap();
+        let k_max = k_vec.iter().max().unwrap();
+
+        let i_min = i_vec.iter().min().unwrap();
+        let j_min = j_vec.iter().min().unwrap();
+        let k_min = k_vec.iter().min().unwrap();
+
+        let i_size = i_max - i_min + 1;
+        let j_size = j_max - j_min + 1;
+        let k_size = k_max - k_min + 1;
+
+        //create grid
+        let mut grid = Array3::from_shape_simple_fn((i_size, j_size, k_size), || None);
+
+        //fill grid
+        for (i, j, k, value) in izip!(i_vec.iter(), j_vec.iter(), k_vec.iter(), value_vec.iter()) {
+            grid[[i - i_min, j - j_min, k - k_min]] = Some(*value);
+        }
+
+        Ok(Self::new(grid, grid_spacing, coordinate_system))
     }
 }
 

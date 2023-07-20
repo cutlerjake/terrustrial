@@ -1,19 +1,10 @@
 use crate::{
-    geometry::ellipsoid::Ellipsoid,
-    kriging::KrigingParameters,
-    spatial_database::{
-        gridded_databases::{
-            gridded_data_base_queary_engine::GriddedDataBaseOctantQueryEngine,
-            GriddedDataBaseInterface,
-        },
-        SpatialDataBase, SpatialQueryable,
-    },
+    kriging::KrigingParameters, spatial_database::SpatialQueryable,
     variography::model_variograms::VariogramModel,
 };
 
 use dyn_stack::{DynStack, GlobalMemBuffer, ReborrowMut};
 use faer_cholesky::llt::compute;
-use faer_cholesky::llt::solve::solve_in_place_with_conj;
 use faer_core::{mul::inner_prod::inner_prod_with_conj, Conj, Mat, Parallelism};
 use indicatif::ParallelProgressIterator;
 use nalgebra::{Point3, Vector3};
@@ -379,7 +370,7 @@ where
     }
 
     /// Perform simple kriging at all kriging points
-    pub fn krige(&self, kriging_points: &[Point3<f32>]) -> Vec<f32> {
+    pub fn krig(&self, kriging_points: &[Point3<f32>]) -> Vec<f32> {
         //construct kriging system
         let kriging_system = SimpleKrigingSystem::new(self.kriging_parameters.max_octant_data * 8);
 

@@ -3,9 +3,7 @@ use ordered_float::OrderedFloat;
 
 use crate::{
     geometry::Geometry,
-    spatial_database::{
-        coordinate_system::octant, SpatialDataBase, SpatialQuery, SpatialQueryable,
-    },
+    spatial_database::{coordinate_system::octant, SpatialQueryable},
 };
 
 use super::GriddedDataBaseInterface;
@@ -38,7 +36,7 @@ where
         geometry.translate_to(&ref_point);
 
         //get all offsets for geometry
-        let mut offsets = gdb.offsets_from_ind_in_geometry(&[0, 0, 0], &geometry);
+        let offsets = gdb.offsets_from_ind_in_geometry(&[0, 0, 0], &geometry);
 
         //splits offsets into octant groups
         let mut octants = vec![Vec::new(); 8];
@@ -81,6 +79,7 @@ where
     /// * `gdb` - The gridded database to use for the query engine
     ///     * must have same grid size and orientation as gdb used for construction of query engine
     pub fn nearest_points_and_values(&self, point: &Point3<f32>) -> (Vec<Point3<f32>>, Vec<T>) {
+        let _ = self.geometry;
         //this only works if the grid ang geometry have similar orientation
         //TODO: convert to high ind relative to geometry rotation
         let point_ind = self.db.coord_to_high_ind(point).map(|x| x as usize);

@@ -1,14 +1,16 @@
+use std::{collections::HashMap, error, mem::MaybeUninit, str::FromStr};
+
+use itertools::izip;
 use nalgebra::Point3;
 use ndarray::Array3;
-use ordered_float::OrderedFloat;
 use parry3d::bounding_volume::Aabb;
 
 use crate::{
-    geometry::{self, Geometry},
-    spatial_database::coordinate_system::{octant, CoordinateSystem, GridSpacing},
+    geometry::Geometry,
+    spatial_database::coordinate_system::{CoordinateSystem, GridSpacing},
 };
 
-use super::{GriddedDataBaseInterface, GriddedDataBaseOctantQueryEngine};
+use super::GriddedDataBaseInterface;
 
 /// A raw gridded database
 /// # Members
@@ -18,7 +20,7 @@ use super::{GriddedDataBaseInterface, GriddedDataBaseOctantQueryEngine};
 ///
 pub struct RawGriddedDataBase<T> {
     pub(crate) grid: Array3<T>,
-    pub(crate) block_size: GridSpacing,
+    pub(crate) grid_spacing: GridSpacing,
     pub(crate) coordinate_system: CoordinateSystem,
 }
 
@@ -30,22 +32,14 @@ impl<T> RawGriddedDataBase<T> {
     /// * `coordinate_system` - Coordinate system of the grid (Location and orientation of the grid)
     pub fn new(
         grid: Array3<T>,
-        block_size: GridSpacing,
+        grid_spacing: GridSpacing,
         coordinate_system: CoordinateSystem,
     ) -> Self {
         Self {
             grid,
-            block_size,
+            grid_spacing,
             coordinate_system,
         }
-    }
-
-    fn from_csv(
-        csv_path: &str,
-        block_size: GridSpacing,
-        coordinate_system: CoordinateSystem,
-    ) -> Self {
-        todo!();
     }
 
     /// Coordinates of point in local coordinate system
@@ -54,8 +48,8 @@ impl<T> RawGriddedDataBase<T> {
     }
 
     /// divide point by block size
-    fn normalize_point_to_block_size(&self, point: &Point3<f32>) -> Point3<f32> {
-        let block_size = self.block_size;
+    fn normalize_point_to_grid_spacing(&self, point: &Point3<f32>) -> Point3<f32> {
+        let block_size = self.grid_spacing;
         Point3::new(
             point.x / block_size.x,
             point.y / block_size.y,
@@ -67,7 +61,7 @@ impl<T> RawGriddedDataBase<T> {
     /// try to avoid using this function
     pub fn coord_to_ind(&self, point: &Point3<f32>) -> Option<[usize; 3]> {
         let point = self.transform_point_to_grid(point);
-        let point = self.normalize_point_to_block_size(&point);
+        let point = self.normalize_point_to_grid_spacing(&point);
         //check coords for positiveness
         if point.x < 0.0 || point.y < 0.0 || point.z < 0.0 {
             return None;
@@ -93,7 +87,7 @@ impl<T> RawGriddedDataBase<T> {
     /// Convert a point to a grid index defined by the ceiling of the normalized local coordinates
     pub fn grid_aligned_coord_to_high_ind(&self, point: &Point3<f32>) -> Option<[usize; 3]> {
         //normalize coords to block size
-        let point = self.normalize_point_to_block_size(&point);
+        let point = self.normalize_point_to_grid_spacing(&point);
 
         //set all point coordinates below 0 to 0
         let point = Point3::new(point.x.max(0.0), point.y.max(0.0), point.z.max(0.0));
@@ -108,7 +102,7 @@ impl<T> RawGriddedDataBase<T> {
     /// Convert a point to a grid index defined by the ceiling of the normalized local coordinates (may be negative)
     pub fn grid_aligned_coord_to_high_ind_with_negative(&self, point: &Point3<f32>) -> [isize; 3] {
         //normalize coords to block size
-        let point = self.normalize_point_to_block_size(&point);
+        let point = self.normalize_point_to_grid_spacing(&point);
 
         [
             point.x.ceil() as isize,
@@ -134,7 +128,7 @@ impl<T> RawGriddedDataBase<T> {
     /// Convert a point to a grid index defined by the floor of the normalized local coordinates
     pub fn grid_aligned_coord_to_low_ind(&self, point: &Point3<f32>) -> Option<[usize; 3]> {
         //normalize coords to block size
-        let point = self.normalize_point_to_block_size(&point);
+        let point = self.normalize_point_to_grid_spacing(&point);
 
         //set all point coordinates larger then grid dimension to grid dimension
         let point = Point3::new(
@@ -153,7 +147,7 @@ impl<T> RawGriddedDataBase<T> {
     /// Convert a point to a grid index defined by the floor of the normalized local coordinates (may be negative)
     pub fn grid_aligned_coord_to_low_ind_with_negative(&self, point: &Point3<f32>) -> [isize; 3] {
         //normalize coords to block size
-        let point = self.normalize_point_to_block_size(&point);
+        let point = self.normalize_point_to_grid_spacing(&point);
 
         [
             point.x.floor() as isize,
@@ -176,9 +170,9 @@ impl<T> RawGriddedDataBase<T> {
         let mut z = ind[2] as f32;
 
         //scale coords to grid
-        x = x * self.block_size.x;
-        y = y * self.block_size.y;
-        z = z * self.block_size.z;
+        x = x * self.grid_spacing.x;
+        y = y * self.grid_spacing.y;
+        z = z * self.grid_spacing.z;
 
         //create point
         let point = Point3::new(x, y, z);
@@ -194,9 +188,9 @@ impl<T> RawGriddedDataBase<T> {
         let mut z = ind[2] as f32;
 
         //scale coords to grid
-        x = x * self.block_size.x;
-        y = y * self.block_size.y;
-        z = z * self.block_size.z;
+        x = x * self.grid_spacing.x;
+        y = y * self.grid_spacing.y;
+        z = z * self.grid_spacing.z;
 
         //create point
         let point = Point3::new(x, y, z);
