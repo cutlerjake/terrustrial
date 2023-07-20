@@ -149,6 +149,7 @@ where
             })
             .collect::<Vec<_>>();
 
+        println!("POPULATING GRID");
         let mut rng = rand::thread_rng();
         sequential_data.into_iter().for_each(
             |(ind, kriging_point, cond_values, sim_inds, weights)| {
