@@ -164,6 +164,12 @@ where
                     .chain(sim_values.iter())
                     .collect::<Vec<_>>();
 
+                println!(
+                    "values len: {}, weights len: {}",
+                    values.len(),
+                    weights.nrows()
+                );
+
                 //store values and weights in kriging system
                 unsafe { kriging_system.values.set_dims(values.len(), 1) };
                 for i in 0..values.len() {
