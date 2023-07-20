@@ -2,7 +2,7 @@ use std::os::windows::thread;
 
 use nalgebra::Point3;
 use ndarray::Array3;
-use rand::{prelude::SliceRandom, Rng};
+use rand::{prelude::SliceRandom, rngs::StdRng, Rng};
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
@@ -61,7 +61,7 @@ where
     }
 
     /// Perform simple kriging at all kriging points
-    pub fn simulate_grid<GDB>(&self, grid: &mut GDB)
+    pub fn simulate_grid<GDB>(&self, grid: &mut GDB, rng: &mut StdRng)
     where
         GDB: GriddedDataBaseInterface<f32> + std::marker::Sync,
     {
@@ -93,19 +93,6 @@ where
         for (ind, val) in path.iter().enumerate() {
             simulation_order[*val] = ind;
         }
-
-        //create grid octant queary engine for simulation order
-        // let so_db = RawGriddedDataBase::new(
-        //     simulation_order.clone(),
-        //     grid.grid_spacing(),
-        //     grid.coordinate_system(),
-        // );
-
-        // let so_qe = GriddedDataBaseOctantQueryEngine::new(
-        //     geometry.clone(),
-        //     &so_db,
-        //     self.sgs_parameters.max_octant_cond_data,
-        // );
 
         // Equipped with the simulation order and the original conditioning data we can solve for the SK weights in parralel
         // Note: We do not know the values so we can't populate the grid
@@ -150,8 +137,6 @@ where
             })
             .collect::<Vec<_>>();
 
-        println!("POPULATING GRID");
-        let mut rng = rand::thread_rng();
         sequential_data.into_iter().for_each(
             |(ind, kriging_point, cond_values, sim_inds, weights, cov_vec)| {
                 //get simulation values

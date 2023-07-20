@@ -81,7 +81,8 @@ Terrustrial is under active development
 # Implemented Features
 - Experimental variogram computation
 - Spherical variogram
-- simple kriging
+- simple kriging (parallel and vectorized)
+- sgs (parallel and vectorized)
 
  # Planned Features
  ## Variography
@@ -94,7 +95,7 @@ Terrustrial is under active development
  - Ordinary Kriging
    
  ## Simulation
- - Gaussian simulation methods (SGS, GSGS, DBSIM)
+ - Gaussian simulation methods (GSGS, DBSIM)
  - Multi-point simulation methods (SNESIM, FILTERSIM)
  - High-Order simulation methods (HOSIM)
 
