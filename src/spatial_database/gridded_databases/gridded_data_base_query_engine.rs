@@ -195,6 +195,12 @@ where
 
         (inds, points)
     }
+
+    pub fn retain_offsets<F: Fn(&[isize; 3]) -> bool>(&mut self, filter: F) {
+        for offsets in self.octant_offsets.iter_mut() {
+            offsets.retain(|offset| filter(offset));
+        }
+    }
 }
 
 impl<'a, G, GDB, T> SpatialQueryable<T, G> for GriddedDataBaseOctantQueryEngine<'a, G, GDB, T>

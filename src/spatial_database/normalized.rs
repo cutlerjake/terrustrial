@@ -48,7 +48,8 @@ where
     }
 }
 
-// Would prefer to use a normalized wrapper type
+// Would prefer to use a normalized wrapper type to have compile time
+// correctnes checks for algorithms that require normalized input checks
 // but auto implementing inner trait methods is not possible
 // will use Normalize trait instead for now
 pub struct NormalizedSpatialDataBase<SDB, T>

@@ -13,6 +13,8 @@ use nalgebra::{Point3, Vector3};
 use rayon::prelude::*;
 use simba::simd::f32x16;
 
+use super::KrigingSystem;
+
 pub struct SimpleKrigingSystem {
     pub cond_cov_mat: Mat<f32>,
     pub krig_point_cov_vec: Mat<f32>,
@@ -289,7 +291,6 @@ impl SimpleKrigingSystem {
     /// * `cond_values` - The conditioning values for the kriging point
     /// * `kriging_point` - The kriging point
     /// * 'vgram' - The variogram model
-
     #[inline(always)]
     pub fn build_system<V>(
         &mut self,
@@ -319,7 +320,7 @@ impl SimpleKrigingSystem {
 
     /// SK Estimate
     #[inline(always)]
-    pub fn estimate(&mut self) -> f32 {
+    pub fn estimate(&self) -> f32 {
         inner_prod_with_conj(
             self.values.as_ref(),
             Conj::No,
@@ -337,6 +338,38 @@ impl SimpleKrigingSystem {
                 self.krig_point_cov_vec.as_ref(),
                 Conj::No,
             )
+    }
+}
+
+impl KrigingSystem for SimpleKrigingSystem {
+    fn new(n_elems: usize) -> Self {
+        SimpleKrigingSystem::new(n_elems)
+    }
+
+    fn build_system<V>(
+        &mut self,
+        conditioning_points: &[Point3<f32>],
+        conditioning_values: &[f32],
+        kriging_point: &Point3<f32>,
+        variogram_model: &V,
+    ) where
+        V: VariogramModel,
+    {
+        SimpleKrigingSystem::build_system(
+            self,
+            conditioning_points,
+            conditioning_values,
+            kriging_point,
+            variogram_model,
+        );
+    }
+
+    fn estimate(&self) -> f32 {
+        SimpleKrigingSystem::estimate(self)
+    }
+
+    fn variance(&self) -> f32 {
+        SimpleKrigingSystem::variance(self)
     }
 }
 

@@ -10,7 +10,7 @@ use crate::{
     kriging::simple_kriging::SimpleKrigingSystem,
     spatial_database::{
         gridded_databases::{
-            gridded_data_base_queary_engine::GriddedDataBaseOctantQueryEngine,
+            gridded_data_base_query_engine::GriddedDataBaseOctantQueryEngine,
             gridded_db::RawGriddedDataBase, GriddedDataBaseInterface,
         },
         SpatialQueryable,
@@ -94,10 +94,9 @@ where
             simulation_order[*val] = ind;
         }
 
-        // Equipped with the simulation order and the original conditioning data we can solve for the SK weights in parralel
         // Note: We do not know the values so we can't populate the grid
         // But at each location in the grid we now all the points that will be previously simulated and the locations of the conditioning data
-        // thus, we can solve for the weights in parrallel, then populate the grid in serial
+        // thus, we can solve for the weights in parrallel, then populate the grid sequentially
         let sequential_data = path
             .par_iter()
             .map_with(kriging_system.clone(), |local_system, ind| {

@@ -3,12 +3,12 @@ use parry3d::bounding_volume::Aabb;
 
 use crate::geometry::Geometry;
 
-use self::gridded_data_base_queary_engine::GriddedDataBaseOctantQueryEngine;
+use self::gridded_data_base_query_engine::GriddedDataBaseOctantQueryEngine;
 
 use super::coordinate_system::{CoordinateSystem, GridSpacing};
 
 pub mod complete_grid;
-pub mod gridded_data_base_queary_engine;
+pub mod gridded_data_base_query_engine;
 pub mod gridded_db;
 pub mod incomplete_grid;
 
