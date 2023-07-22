@@ -256,8 +256,6 @@ where
             )
             .collect::<Vec<_>>();
 
-        println!("Finished building systems");
-
         sequential_data.into_iter().for_each(
             |(inds, sim_points, cond_values, sim_cond_inds, mut mini_system)| {
                 //get simulation values
@@ -341,8 +339,13 @@ mod test {
             coordinate_system,
         )
         .unwrap();
-
+        let (raw_data, _s) = gdb.data_and_points();
         gdb.normalize();
+        let (norm_data, _s) = gdb.data_and_points();
+
+        raw_data.iter().zip(norm_data).for_each(|(rd, nd)| {
+            println!("raw: {}, norm: {}", rd, nd);
+        });
 
         let sim_grid_arr = Array3::<Option<f32>>::from_elem(gdb.shape(), None);
         let mut sim_db = InCompleteGriddedDataBase::new(
