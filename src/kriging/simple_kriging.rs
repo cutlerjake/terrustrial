@@ -440,10 +440,24 @@ where
 #[cfg(test)]
 mod tests {
 
+    use std::{fs::File, io::Write};
+
+    use itertools::Itertools;
     use nalgebra::{Translation3, UnitQuaternion, Vector3};
+    use ndarray::Array3;
+    use num_traits::Float;
 
     use crate::{
-        spatial_database::coordinate_system::{self, CoordinateSystem},
+        geometry::ellipsoid::Ellipsoid,
+        spatial_database::{
+            coordinate_system::{CoordinateSystem, GridSpacing},
+            gridded_databases::{
+                gridded_data_base_query_engine::GriddedDataBaseOctantQueryEngine,
+                incomplete_grid::InCompleteGriddedDataBase, GriddedDataBaseInterface,
+            },
+            normalized::Normalize,
+            SpatialDataBase,
+        },
         variography::model_variograms::spherical::SphericalVariogram,
     };
 
@@ -483,5 +497,101 @@ mod tests {
 
         assert_eq!(mean, 4.488526);
         assert_eq!(variance, 0.1558531);
+    }
+
+    #[test]
+    fn sgs_test() {
+        // Define the coordinate system for the grid
+        // origing at x = 0, y = 0, z = 0
+        // azimuth = 0, dip = 0, plunge = 0
+        let coordinate_system = CoordinateSystem::new(
+            Point3::new(0.0, 0.0, 0.0).into(),
+            UnitQuaternion::from_euler_angles(0.0.to_radians(), 0.0.to_radians(), 0.0.to_radians()),
+        );
+
+        // create a gridded database from a csv file (walker lake)
+        let mut gdb = InCompleteGriddedDataBase::from_csv_index(
+            "./data/walker.csv",
+            "X",
+            "Y",
+            "Z",
+            "V",
+            GridSpacing {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            },
+            coordinate_system,
+        )
+        .expect("Failed to create gdb");
+
+        // normalize the data
+        gdb.normalize();
+
+        // create a grid to store the simulation values
+        let krig_grid_arr = Array3::<Option<f32>>::from_elem(gdb.shape(), None);
+        let mut krig_db = InCompleteGriddedDataBase::new(
+            krig_grid_arr,
+            gdb.grid_spacing().clone(),
+            gdb.coordinate_system().clone(),
+        );
+
+        // create a spherical variogram
+        // azimuth = 0, dip = 0, plunge = 0
+        // range_x = 150, range_y = 50, range_z = 1
+        // sill = 1, nugget = 0
+        let vgram_rot =
+            UnitQuaternion::from_euler_angles(0.0.to_radians(), 0.0.to_radians(), 0.0.to_radians());
+        let vgram_origin = Point3::new(0.0, 0.0, 0.0);
+        let vgram_coordinate_system = CoordinateSystem::new(vgram_origin.into(), vgram_rot);
+        let range = Vector3::new(150.0, 50.0, 1.0);
+        let sill = 1.0;
+        let nugget = 0.0;
+
+        let spherical_vgram =
+            SphericalVariogram::new(range, sill, nugget, vgram_coordinate_system.clone());
+
+        // create search ellipsoid
+        let search_ellipsoid = Ellipsoid::new(450.0, 150.0, 1.0, vgram_coordinate_system.clone());
+
+        // create a query engine for the conditioning data
+        let query_engine = GriddedDataBaseOctantQueryEngine::new(search_ellipsoid, &gdb, 16);
+
+        // create a gsgs system
+        let gsgs = SimpleKriging::new(
+            query_engine,
+            spherical_vgram,
+            KrigingParameters {
+                max_cond_data: 40,
+                min_cond_data: 0,
+                min_octant_data: 0,
+                max_octant_data: 8,
+            },
+        );
+
+        //simulate values on grid
+        let points = krig_db
+            .raw_grid
+            .grid
+            .indexed_iter()
+            .map(|(ind, _)| krig_db.point_at_ind(&[ind.0, ind.1, ind.2]))
+            .collect_vec();
+        let values = gsgs.krig(points.as_slice());
+
+        //save values to file for visualization
+
+        let mut out = File::create("./test_results/sk.txt").unwrap();
+        let _ = out.write_all(b"surfs\n");
+        let _ = out.write_all(b"4\n");
+        let _ = out.write_all(b"x\n");
+        let _ = out.write_all(b"y\n");
+        let _ = out.write_all(b"z\n");
+        let _ = out.write_all(b"value\n");
+
+        for (point, value) in points.iter().zip(values.iter()) {
+            //println!("point: {:?}, value: {}", point, value);
+            let _ = out
+                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+        }
     }
 }

@@ -1,7 +1,7 @@
 use nalgebra::UnitQuaternion;
 use nalgebra::Vector3;
 
-use crate::spatial_database::coordinate_system::{self, CoordinateSystem};
+use crate::spatial_database::coordinate_system::CoordinateSystem;
 
 use super::VariogramModel;
 use simba::simd::f32x16;

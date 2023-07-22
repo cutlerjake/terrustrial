@@ -1,19 +1,16 @@
-use std::{collections::HashMap, error, mem::MaybeUninit, str::FromStr};
+use std::{collections::HashMap, error, str::FromStr};
 
 use itertools::izip;
 use nalgebra::Point3;
 use ndarray::Array3;
-use ordered_float::OrderedFloat;
 use parry3d::bounding_volume::Aabb;
 
 use crate::{
     geometry::Geometry,
-    spatial_database::coordinate_system::{octant, CoordinateSystem, GridSpacing},
+    spatial_database::coordinate_system::{CoordinateSystem, GridSpacing},
 };
 
-use super::{
-    gridded_db::RawGriddedDataBase, GriddedDataBaseInterface, GriddedDataBaseOctantQueryEngine,
-};
+use super::{gridded_db::RawGriddedDataBase, GriddedDataBaseInterface};
 
 /// Grid implementation for handling incomplete grids.
 pub struct InCompleteGriddedDataBase<T> {
@@ -134,7 +131,7 @@ where
 
         data.iter()
             .zip(points)
-            .filter(|(val, point)| val.is_some())
+            .filter(|(val, _)| val.is_some())
             .map(|(val, point)| (val.unwrap(), point))
             .unzip()
     }

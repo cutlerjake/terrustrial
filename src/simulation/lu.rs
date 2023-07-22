@@ -1,23 +1,15 @@
-use crate::{
-    kriging::KrigingParameters, spatial_database::SpatialQueryable,
-    variography::model_variograms::VariogramModel,
-};
+use crate::variography::model_variograms::VariogramModel;
 
 use dyn_stack::{DynStack, GlobalMemBuffer, ReborrowMut};
-use faer_cholesky::llt::{
-    compute,
-    inverse::{self, invert_lower_in_place},
-};
+use faer_cholesky::llt::{compute, inverse::invert_lower_in_place};
 use faer_core::{
-    mul::{self, inner_prod::inner_prod_with_conj, matmul, triangular::BlockStructure},
-    Conj, Mat, MatMut, MatRef, Parallelism,
+    mul::{self, triangular::BlockStructure},
+    Conj, Mat, Parallelism,
 };
-use indicatif::ParallelProgressIterator;
 use itertools::Itertools;
-use nalgebra::{Point3, Vector3, LU};
+use nalgebra::{Point3, Vector3};
 use rand::{rngs::StdRng, Rng};
 use rand_distr::StandardNormal;
-use rayon::prelude::*;
 use simba::simd::f32x16;
 
 pub struct LUSystem {
@@ -153,12 +145,13 @@ impl LUSystem {
         let mut cholesky_inv_stack = DynStack::new(&mut self.cholesky_inv_mem);
 
         //compute cholseky decomposition of L matrix
-        let _ = compute::cholesky_in_place(
+        compute::cholesky_in_place(
             self.l_mat.as_mut(),
             Parallelism::None,
             cholesky_compute_stack.rb_mut(),
             Default::default(),
-        );
+        )
+        .expect("Error computing cholesky decomposition");
 
         // println!("Cholesky computed");
         // println!("CHOLMAT\n{:?}", self.l_mat);
@@ -193,7 +186,7 @@ impl LUSystem {
     fn populate_w_vec(&mut self, values: &[f32], rng: &mut StdRng) {
         //populate w vector
         for (i, v) in values.iter().enumerate() {
-            self.w_vec.write(i, 0, values[i]);
+            self.w_vec.write(i, 0, *v);
         }
         for i in values.len()..self.w_vec.nrows() {
             self.w_vec.write(i, 0, rng.sample(StandardNormal));
@@ -343,7 +336,7 @@ impl MiniLUSystem {
     pub fn populate_w_vec(&mut self, values: &[f32], rng: &mut StdRng) {
         //populate w vector
         for (i, v) in values.iter().enumerate() {
-            unsafe { self.w_vec.write_unchecked(i, 0, values[i]) };
+            unsafe { self.w_vec.write_unchecked(i, 0, *v) };
         }
         for i in values.len()..self.w_vec.nrows() {
             unsafe { self.w_vec.write_unchecked(i, 0, rng.sample(StandardNormal)) };

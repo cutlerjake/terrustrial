@@ -1,19 +1,16 @@
-use std::os::windows::thread;
-
-use nalgebra::Point3;
 use ndarray::Array3;
-use rand::{prelude::SliceRandom, rngs::StdRng, Rng};
+use rand::{prelude::SliceRandom, rngs::StdRng};
 use rand_distr::Distribution;
 use rand_distr::Normal;
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
-    geometry::{self, Geometry},
+    geometry::Geometry,
     kriging::simple_kriging::SimpleKrigingSystem,
     spatial_database::{
         gridded_databases::{
             gridded_data_base_query_engine::GriddedDataBaseOctantQueryEngine,
-            gridded_db::RawGriddedDataBase, GriddedDataBaseInterface,
+            GriddedDataBaseInterface,
         },
         SpatialQueryable,
     },
@@ -43,21 +40,17 @@ where
 {
     /// Create a new simple kriging estimator with the given parameters
     /// # Arguments
-    /// * `conditioning_data` - The data to condition the kriging system on
+    /// * `conditioning_data` - The data to condition the kriging system on (mut be normalized)
     /// * `variogram_model` - The variogram model to use
     /// * `search_ellipsoid` - The search ellipsoid to use
-    /// * `kriging_parameters` - The kriging parameters to use
+    /// * `sgs_parameters` - The SGS parameters to use
     /// # Returns
     /// A new simple kriging estimator
-    pub fn new(
-        conditioning_data: S,
-        variogram_model: V,
-        kriging_parameters: SGSParameters,
-    ) -> Self {
+    pub fn new(conditioning_data: S, variogram_model: V, sgs_parameters: SGSParameters) -> Self {
         Self {
             conditioning_data,
             variogram_model,
-            sgs_parameters: kriging_parameters,
+            sgs_parameters,
             phantom: std::marker::PhantomData,
         }
     }
@@ -104,14 +97,14 @@ where
             .map_with(kriging_system.clone(), |local_system, ind| {
                 let ind = [ind.0 as isize, ind.1 as isize, ind.2 as isize];
                 //get kriging point
-                let kriging_point = grid.ind_to_point(&ind);
+                let point = grid.ind_to_point(&ind);
 
                 //get nearest conditioning  points and values
-                let (cond_values, mut cond_points) = self.conditioning_data.query(&kriging_point);
+                let (cond_values, mut cond_points) = self.conditioning_data.query(&point);
 
                 // get nearest simulation points
                 let (sim_inds, sim_points) =
-                    sim_qe.nearest_inds_and_points_masked(&kriging_point, |neighbor_ind| {
+                    sim_qe.nearest_inds_and_points_masked(&point, |neighbor_ind| {
                         simulation_order[neighbor_ind]
                             < simulation_order[ind.map(|ind| ind as usize)]
                     });
@@ -125,7 +118,7 @@ where
                 //build kriging system for point
                 local_system.vectorized_build_covariance_matrix_and_vector(
                     cond_points.as_slice(),
-                    &kriging_point,
+                    &point,
                     &self.variogram_model,
                 );
 
@@ -134,12 +127,13 @@ where
                 let weights = local_system.weights.clone();
                 let cov_vec = local_system.krig_point_cov_vec.clone();
 
-                (ind, kriging_point, cond_values, sim_inds, weights, cov_vec)
+                (ind, cond_values, sim_inds, weights, cov_vec)
             })
             .collect::<Vec<_>>();
 
-        sequential_data.into_iter().for_each(
-            |(ind, kriging_point, cond_values, sim_inds, weights, cov_vec)| {
+        sequential_data
+            .into_iter()
+            .for_each(|(ind, cond_values, sim_inds, weights, cov_vec)| {
                 //get simulation values
                 let sim_values = sim_inds
                     .iter()
@@ -169,7 +163,117 @@ where
 
                 //set value
                 grid.set_data_at_ind(&ind.map(|v| v as usize), value);
+            });
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::{fs::File, io::Write};
+
+    use nalgebra::{Point3, UnitQuaternion, Vector3};
+    use num_traits::Float;
+    use rand::SeedableRng;
+
+    use crate::{
+        geometry::ellipsoid::Ellipsoid,
+        spatial_database::{
+            coordinate_system::{CoordinateSystem, GridSpacing},
+            gridded_databases::incomplete_grid::InCompleteGriddedDataBase,
+            normalized::Normalize,
+        },
+        variography::model_variograms::spherical::SphericalVariogram,
+    };
+
+    #[test]
+    fn sgs_test() {
+        // Define the coordinate system for the grid
+        // origing at x = 0, y = 0, z = 0
+        // azimuth = 0, dip = 0, plunge = 0
+        let coordinate_system = CoordinateSystem::new(
+            Point3::new(0.0, 0.0, 0.0).into(),
+            UnitQuaternion::from_euler_angles(0.0.to_radians(), 0.0.to_radians(), 0.0.to_radians()),
+        );
+
+        // create a gridded database from a csv file (walker lake)
+        let mut gdb = InCompleteGriddedDataBase::from_csv_index(
+            "./data/walker.csv",
+            "X",
+            "Y",
+            "Z",
+            "V",
+            GridSpacing {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            },
+            coordinate_system,
+        )
+        .expect("Failed to create gdb");
+
+        // normalize the data
+        gdb.normalize();
+
+        // create a grid to store the simulation values
+        let sim_grid_arr = Array3::<Option<f32>>::from_elem(gdb.shape(), None);
+        let mut sim_db = InCompleteGriddedDataBase::new(
+            sim_grid_arr,
+            gdb.grid_spacing().clone(),
+            gdb.coordinate_system().clone(),
+        );
+
+        // create a spherical variogram
+        // azimuth = 0, dip = 0, plunge = 0
+        // range_x = 150, range_y = 50, range_z = 1
+        // sill = 1, nugget = 0
+        let vgram_rot =
+            UnitQuaternion::from_euler_angles(0.0.to_radians(), 0.0.to_radians(), 0.0.to_radians());
+        let vgram_origin = Point3::new(0.0, 0.0, 0.0);
+        let vgram_coordinate_system = CoordinateSystem::new(vgram_origin.into(), vgram_rot);
+        let range = Vector3::new(150.0, 50.0, 1.0);
+        let sill = 1.0;
+        let nugget = 0.0;
+
+        let spherical_vgram =
+            SphericalVariogram::new(range, sill, nugget, vgram_coordinate_system.clone());
+
+        // create search ellipsoid
+        let search_ellipsoid = Ellipsoid::new(450.0, 150.0, 1.0, vgram_coordinate_system.clone());
+
+        // create a query engine for the conditioning data
+        let query_engine = GriddedDataBaseOctantQueryEngine::new(search_ellipsoid, &gdb, 16);
+
+        // create a gsgs system
+        let gsgs = SGS::new(
+            query_engine,
+            spherical_vgram,
+            SGSParameters {
+                max_octant_cond_data: 16,
+                max_octant_sim_data: 16,
             },
         );
+
+        let mut rng = StdRng::from_entropy();
+
+        //simulate values on grid
+        gsgs.simulate_grid(&mut sim_db, &mut rng);
+
+        //save values to file for visualization
+        let (values, points) = sim_db.data_and_points();
+
+        let mut out = File::create("./test_results/sgs.txt").unwrap();
+        let _ = out.write_all(b"surfs\n");
+        let _ = out.write_all(b"4\n");
+        let _ = out.write_all(b"x\n");
+        let _ = out.write_all(b"y\n");
+        let _ = out.write_all(b"z\n");
+        let _ = out.write_all(b"value\n");
+
+        for (point, value) in points.iter().zip(values.iter()) {
+            //println!("point: {:?}, value: {}", point, value);
+            let _ = out
+                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+        }
     }
 }

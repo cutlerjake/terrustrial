@@ -3,9 +3,7 @@ use std::fmt::Debug;
 use nalgebra::Point3;
 use parry3d::bounding_volume::Aabb;
 
-use crate::geometry::Geometry;
-
-use self::{coordinate_system::CoordinateSystem, gridded_databases::GriddedDataBaseInterface};
+use self::gridded_databases::GriddedDataBaseInterface;
 
 pub mod coordinate_system;
 pub mod gridded_databases;

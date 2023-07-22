@@ -1,6 +1,3 @@
-use std::{collections::HashMap, error, mem::MaybeUninit, str::FromStr};
-
-use itertools::izip;
 use nalgebra::Point3;
 use ndarray::Array3;
 use parry3d::bounding_volume::Aabb;

@@ -181,7 +181,7 @@ where
                 if !mask(ind) {
                     continue;
                 }
-                if let Some(v) = self.db.data_at_ind(&ind) {
+                if let Some(_) = self.db.data_at_ind(&ind) {
                     let p = self.db.ind_to_point(&ind.map(|x| x as isize));
                     inds.push(ind);
                     points.push(p);

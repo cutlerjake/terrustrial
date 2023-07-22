@@ -3,7 +3,6 @@ use crate::{
     spatial_database::coordinate_system::CoordinateSystem, spatial_database::SpatialDataBase,
 };
 use nalgebra::UnitQuaternion;
-use num_traits::{Float, ToPrimitive};
 
 pub struct VariogramLagParamters {
     pub lag: f32,

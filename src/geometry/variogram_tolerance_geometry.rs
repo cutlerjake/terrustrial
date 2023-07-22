@@ -1,7 +1,4 @@
-use nalgebra::{
-    distance, Point3, Transform3, Translation, Translation3, Unit, UnitDualQuaternion,
-    UnitQuaternion, Vector2, Vector3,
-};
+use nalgebra::{distance, Point3, Translation3, UnitDualQuaternion};
 
 use parry3d::bounding_volume::Aabb;
 
@@ -170,7 +167,4 @@ impl VariogramToleranceGeometry {
 
 //TODO
 #[cfg(test)]
-mod tests {
-
-    use super::*;
-}
+mod tests {}

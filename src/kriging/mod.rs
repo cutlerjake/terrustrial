@@ -6,8 +6,6 @@ use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{spatial_database::SpatialQueryable, variography::model_variograms::VariogramModel};
 
-use self::simple_kriging::SimpleKrigingSystem;
-
 pub mod simple_kriging;
 
 pub trait KrigingSystem: Clone {

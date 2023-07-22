@@ -1,11 +1,6 @@
-use faer_core::{mat, Mat};
-use nalgebra::{
-    Isometry, Isometry3, Point3, Translation, Translation3, UnitDualQuaternion, UnitQuaternion,
-    Vector3,
-};
-use ndarray::Array3;
+use nalgebra::{Isometry, Isometry3, Point3, Translation3, UnitQuaternion};
+
 use simba::simd::f32x16;
-use std::f32::consts::PI;
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct GridSpacing {
@@ -124,6 +119,7 @@ pub fn octant(point: &Point3<f32>) -> u8 {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
+    use std::f32::consts::PI;
     #[test]
     fn no_offset_no_rotation() {
         let origin = Point3::new(0.0, 0.0, 0.0);

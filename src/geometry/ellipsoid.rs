@@ -1,10 +1,9 @@
-use nalgebra::{Isometry3, Quaternion, Transform, UnitQuaternion, Vector3};
-use nalgebra::{Point, Point3};
+use nalgebra::Point3;
+use nalgebra::{Isometry3, UnitQuaternion, Vector3};
 use parry3d::bounding_volume::Aabb;
+use simba::simd::f32x16;
 use simba::simd::SimdPartialOrd;
-use simba::simd::SimdRealField;
 use simba::simd::SimdValue;
-use simba::simd::{f32x16, AutoBoolx16};
 
 use crate::{
     kriging::KrigingParameters, spatial_database::coordinate_system::octant,
@@ -57,13 +56,13 @@ impl Ellipsoid {
 
     /// Vectorized version of contains
     pub fn vectorized_contains(&self, points: &Point3<f32x16>) -> <f32x16 as SimdValue>::SimdBool {
-        let mut rot = self
+        let rot = self
             .coordinate_system
             .world_to_local
             .rotation
             .quaternion()
             .clone();
-        let mut trans = self.coordinate_system.world_to_local.translation;
+        let trans = self.coordinate_system.world_to_local.translation;
 
         let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<f32x16>().into());
         let simd_trans = trans.vector.cast::<f32x16>().into();
@@ -174,8 +173,6 @@ mod tests {
 
     #[test]
     fn test_ellipse_bounding_box() {
-        use nalgebra::Point3;
-
         let coordinate_system = CoordinateSystem::new(
             Translation3::new(0f32, 0f32, 0f32),
             UnitQuaternion::from_euler_angles(0.0, 0.0, 0.0),
