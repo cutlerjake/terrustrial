@@ -1,9 +1,12 @@
 # terrustrial
 Turrustrial is a geostats library written entirely in rust.
 
-Terrustrial is under active development 
-- breaking changes are expected
-- features missing
+# Implemented Features
+- Experimental variogram computation
+- Spherical variogram
+- simple kriging (parallel and vectorized)
+- SGS (parallel and vectorized)
+- GSGS (parallel and vectorized)
 
 # Usage
 
@@ -78,12 +81,6 @@ Terrustrial is under active development
     let values = simple_kriging.krige(kriging_points.as_slice());
 ```
 
-# Implemented Features
-- Experimental variogram computation
-- Spherical variogram
-- simple kriging (parallel and vectorized)
-- sgs (parallel and vectorized)
-
  # Planned Features
  ## Variography
  - Visualization
@@ -95,7 +92,7 @@ Terrustrial is under active development
  - Ordinary Kriging
    
  ## Simulation
- - Gaussian simulation methods (GSGS, DBSIM)
+ - Gaussian simulation methods (DBSIM)
  - Multi-point simulation methods (SNESIM, FILTERSIM)
  - High-Order simulation methods (HOSIM)
 
