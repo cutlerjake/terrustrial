@@ -3,6 +3,7 @@ use std::os::windows::thread;
 use nalgebra::Point3;
 use ndarray::Array3;
 use rand::{prelude::SliceRandom, rngs::StdRng, Rng};
+use rand_distr::StandardNormal;
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
@@ -163,7 +164,7 @@ where
                 //compute variance
                 let variance = kriging_system.variance();
 
-                let value = mean + rng.gen::<f32>() * variance;
+                let value = mean + rng.sample::<f32, _>(StandardNormal) * variance;
 
                 //set value
                 grid.set_data_at_ind(&ind.map(|v| v as usize), value);

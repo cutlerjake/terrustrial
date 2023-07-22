@@ -11,7 +11,7 @@
             "cargo": {
                 "args": [
                     "test",
-                    "test_lu",
+                    "gsgs_test",
                     "--no-run",
                     "--lib",
                     "--package=terrustrial"

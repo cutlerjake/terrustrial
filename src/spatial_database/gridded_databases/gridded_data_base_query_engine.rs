@@ -14,11 +14,11 @@ where
     G: Geometry,
     GDB: GriddedDataBaseInterface<T>,
 {
-    octant_offsets: Vec<Vec<[isize; 3]>>,
-    geometry: G,
-    max_octant_size: usize,
-    db: &'a GDB,
-    phantom: std::marker::PhantomData<T>,
+    pub(crate) octant_offsets: Vec<Vec<[isize; 3]>>,
+    pub(crate) geometry: G,
+    pub(crate) max_octant_size: usize,
+    pub(crate) db: &'a GDB,
+    pub(crate) phantom: std::marker::PhantomData<T>,
 }
 
 impl<'a, G, GDB, T> GriddedDataBaseOctantQueryEngine<'a, G, GDB, T>

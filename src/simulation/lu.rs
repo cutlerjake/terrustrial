@@ -4,7 +4,10 @@ use crate::{
 };
 
 use dyn_stack::{DynStack, GlobalMemBuffer, ReborrowMut};
-use faer_cholesky::llt::compute;
+use faer_cholesky::llt::{
+    compute,
+    inverse::{self, invert_lower_in_place},
+};
 use faer_core::{
     mul::{self, inner_prod::inner_prod_with_conj, matmul, triangular::BlockStructure},
     Conj, Mat, MatMut, MatRef, Parallelism,
@@ -13,6 +16,7 @@ use indicatif::ParallelProgressIterator;
 use itertools::Itertools;
 use nalgebra::{Point3, Vector3, LU};
 use rand::{rngs::StdRng, Rng};
+use rand_distr::StandardNormal;
 use rayon::prelude::*;
 use simba::simd::f32x16;
 
@@ -25,6 +29,8 @@ pub struct LUSystem {
     pub n_sim: usize,
     pub n_cond: usize,
     pub n_total: usize,
+    pub sim_size: usize,
+    pub cond_size: usize,
     pub cond_x_buffer: [f32; 16],
     pub cond_y_buffer: [f32; 16],
     pub cond_z_buffer: [f32; 16],
@@ -55,12 +61,14 @@ impl LUSystem {
         Self {
             l_mat: Mat::zeros(n_total, n_total),
             w_vec: Mat::zeros(n_total, 1),
-            intermediate_mat: Mat::zeros(n_total, 1),
+            intermediate_mat: Mat::zeros(n_sim, n_cond),
             cholesky_compute_mem,
             cholesky_inv_mem,
             n_sim,
             n_cond,
             n_total,
+            sim_size: n_sim,
+            cond_size: n_cond,
             cond_x_buffer: [0.0; 16],
             cond_y_buffer: [0.0; 16],
             cond_z_buffer: [0.0; 16],
@@ -88,6 +96,10 @@ impl LUSystem {
 
         let mut cnt = 0;
 
+        // println!(
+        //     "Simd vec buffer capacity: {}",
+        //     self.simd_vec_buffer.capacity()
+        // );
         //compute lower triangle of L matrix
         for (i, p1) in l_points.iter().enumerate() {
             for p2 in l_points[0..=i].iter() {
@@ -118,24 +130,25 @@ impl LUSystem {
             .iter()
             .map(|simd_point| vgram.vectorized_covariogram(*simd_point));
 
+        // println!("Simd vec buffer len: {}", self.simd_vec_buffer.len());
         let mut pop_cnt = 0;
 
         //populate covariance matrix using lower triangle value
         for i in 0..l_points.len() {
             for j in 0..=i {
                 if pop_cnt % 16 == 0 {
-                    self.cov_buffer = unsafe { simd_cov_iter.next().unwrap_unchecked().into() };
+                    self.cov_buffer = simd_cov_iter.next().unwrap().into();
                 }
 
-                unsafe {
-                    self.l_mat
-                        .write_unchecked(i, j, self.cov_buffer[pop_cnt % 16]);
-                };
+                self.l_mat.write(i, j, self.cov_buffer[pop_cnt % 16]);
+
                 pop_cnt += 1;
             }
         }
 
-        //create dynstack
+        // println!("COVMAT/n{:?}", self.l_mat);
+        // println!();
+        //create dynstacks
         let mut cholesky_compute_stack = DynStack::new(&mut self.cholesky_compute_mem);
         let mut cholesky_inv_stack = DynStack::new(&mut self.cholesky_inv_mem);
 
@@ -147,29 +160,43 @@ impl LUSystem {
             Default::default(),
         );
 
-        let m = self
-            .l_mat
-            .as_mut()
-            .submatrix(0, 0, self.n_cond, self.n_cond);
+        // println!("Cholesky computed");
+        // println!("CHOLMAT\n{:?}", self.l_mat);
+        // println!();
 
-        println!("{:?}", m);
+        // println!("Making temp");
+        // let mut temp = self
+        //     .l_mat
+        //     .as_ref()
+        //     .submatrix(0, 0, self.n_cond, self.n_cond)
+        //     .to_owned();
 
-        //invert dd portion of L matrix
-        faer_cholesky::llt::inverse::invert_lower_in_place(
-            m,
+        // println!("Inverting");
+        invert_lower_in_place(
+            self.l_mat
+                .as_mut()
+                .submatrix(0, 0, self.n_cond, self.n_cond),
             Parallelism::None,
             cholesky_inv_stack.rb_mut(),
         );
+        // faer_core::inverse::invert_lower_triangular(
+        //     temp.as_mut(),
+        //     self.l_mat
+        //         .as_ref()
+        //         .submatrix(0, 0, self.n_cond, self.n_cond),
+        //     Parallelism::None,
+        // );
+        // println!("Inverted");
     }
 
     #[inline(always)]
     fn populate_w_vec(&mut self, values: &[f32], rng: &mut StdRng) {
         //populate w vector
         for (i, v) in values.iter().enumerate() {
-            unsafe { self.w_vec.write_unchecked(i, 0, values[i]) };
+            self.w_vec.write(i, 0, values[i]);
         }
         for i in values.len()..self.w_vec.nrows() {
-            unsafe { self.w_vec.write_unchecked(i, 0, rng.gen::<f32>()) };
+            self.w_vec.write(i, 0, rng.sample(StandardNormal));
         }
     }
 
@@ -193,6 +220,8 @@ impl LUSystem {
     }
 
     fn set_dims(&mut self, num_cond: usize, num_sim: usize) {
+        assert!(num_cond <= self.cond_size);
+        assert!(num_sim <= self.sim_size);
         self.n_cond = num_cond;
         self.n_sim = num_sim;
         self.n_total = num_cond + num_sim;
@@ -264,17 +293,27 @@ impl LUSystem {
     {
         let n_cond = cond_points.len();
         let n_sim = sim_points.len();
+        // println!(
+        //     "Trying to create mini system of size {:?}, with capacity {:?}",
+        //     (n_sim, n_cond),
+        //     (self.sim_size, self.cond_size),
+        // );
+        // println!("Setting dims");
         self.set_dims(n_cond, n_sim);
+        // println!("Building system");
         self.vectorized_build_l_matrix(cond_points, sim_points, vgram);
+        // println!("Computing intermediate mat");
         self.compute_intermediate_mat();
 
         let l_gg = self
             .l_mat
             .as_ref()
             .submatrix(self.n_cond, self.n_cond, self.n_sim, self.n_sim)
-            .to_owned();
-        let intermediate = self.intermediate_mat.to_owned();
-        let w = self.w_vec.to_owned();
+            .to_owned()
+            .clone();
+        let intermediate = self.intermediate_mat.clone();
+        let w = self.w_vec.clone();
+
         MiniLUSystem {
             n_sim,
             n_cond,
@@ -287,7 +326,7 @@ impl LUSystem {
 
 impl Clone for LUSystem {
     fn clone(&self) -> Self {
-        Self::new(self.n_sim, self.n_cond)
+        Self::new(self.sim_size, self.cond_size)
     }
 }
 
@@ -307,7 +346,7 @@ impl MiniLUSystem {
             unsafe { self.w_vec.write_unchecked(i, 0, values[i]) };
         }
         for i in values.len()..self.w_vec.nrows() {
-            unsafe { self.w_vec.write_unchecked(i, 0, rng.gen::<f32>()) };
+            unsafe { self.w_vec.write_unchecked(i, 0, rng.sample(StandardNormal)) };
         }
     }
 
@@ -329,7 +368,7 @@ impl MiniLUSystem {
             Conj::No,
             self.w_vec.as_ref().submatrix(self.n_cond, 0, self.n_sim, 1),
             Conj::No,
-            None,
+            Some(1.0),
             1.0,
         );
 

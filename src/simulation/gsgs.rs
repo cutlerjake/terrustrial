@@ -1,7 +1,7 @@
 use itertools::{iproduct, izip, Itertools};
 use nalgebra::Point3;
 use ndarray::Array3;
-use rand::{rngs::StdRng, seq::SliceRandom, Rng};
+use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, Rng, SeedableRng};
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
@@ -67,12 +67,6 @@ where
     where
         GDB: GriddedDataBaseInterface<f32> + std::marker::Sync,
     {
-        // //construct kriging system
-        // let mut kriging_system = SimpleKrigingSystem::new(
-        //     (self.gsgs_parameters.max_octant_cond_data + self.gsgs_parameters.max_octant_sim_data)
-        //         * 8,
-        // );
-
         // create query engine for simulation grid
         let geometry = self.conditioning_data.geometry().clone();
         let mut sim_qe = GriddedDataBaseOctantQueryEngine::new(
@@ -139,34 +133,90 @@ where
             }
         }
 
+        //println!("Starting loop");
         // Note: We do not know the values so we can't populate the grid
         // But at each location in the grid we now all the points that will be previously simulated and the locations of the conditioning data
         // thus, we can solve for the weights in parrallel, then populate the grid sequentially
+        let mut local_system = LUSystem::new(
+            self.gsgs_parameters.group_size.iter().product(),
+            (self.gsgs_parameters.max_octant_cond_data + self.gsgs_parameters.max_octant_sim_data)
+                * 8,
+        );
+
+        // let sequential_data = path
+        //     .iter()
+        //     .map(|inds| {
+        //         //let ind = [ind.0 as isize, ind.1 as isize, ind.2 as isize];
+        //         //get pointer at center of groud
+        //         let mut sim_points = inds
+        //             .iter()
+        //             .map(|ind| grid.ind_to_point(&ind.map(|i| i as isize)))
+        //             .collect::<Vec<_>>();
+        //         let point = sim_points.iter().fold(Point3::origin(), |mut acc, p| {
+        //             acc.coords += p.coords;
+        //             acc
+        //         }) / inds.len() as f32;
+
+        //         //get nearest conditioning  points and values
+        //         let (cond_values, mut cond_points) = self.conditioning_data.query(&point);
+
+        //         // get nearest simulation points
+        //         let (sim_cond_inds, sim_cond_points) =
+        //             sim_qe.nearest_inds_and_points_masked(&point, |neighbor_ind| {
+        //                 simulation_order[neighbor_ind]
+        //                     < simulation_order[inds[0].map(|ind| ind as usize)]
+        //             });
+
+        //         // sim_cond_points
+        //         //     .retain(|point| cond_points.iter().all(|cond_point| cond_point != point));
+
+        //         //append simulation points to conditioning points
+        //         cond_points.extend(sim_cond_points.iter());
+
+        //         //slightly shift points to avoid degenerate systems
+        //         let cond_points = cond_points
+        //             .iter_mut()
+        //             .map(|point| {
+        //                 point.coords.x += rng.gen::<f32>() * 0.0001;
+        //                 point.coords.y += rng.gen::<f32>() * 0.0001;
+        //                 point.coords.z += rng.gen::<f32>() * 0.0001;
+        //                 *point
+        //             })
+        //             .collect_vec();
+
+        //         let mini_system = local_system.create_mini_system(
+        //             &cond_points,
+        //             &sim_points,
+        //             &self.variogram_model,
+        //         );
+
+        //         (inds, sim_points, cond_values, sim_cond_inds, mini_system)
+        //     })
+        //     .collect::<Vec<_>>();
+
         let sequential_data = path
             .par_iter()
             .map_with(
-                LUSystem::new(
-                    self.gsgs_parameters.group_size.iter().product(),
-                    (self.gsgs_parameters.max_octant_cond_data
-                        + self.gsgs_parameters.max_octant_sim_data)
-                        * 8,
+                (
+                    LUSystem::new(
+                        self.gsgs_parameters.group_size.iter().product(),
+                        (self.gsgs_parameters.max_octant_cond_data
+                            + self.gsgs_parameters.max_octant_sim_data)
+                            * 8,
+                    ),
+                    StdRng::from_entropy(),
                 ),
-                |local_system, inds| {
+                |(local_system, local_rng), inds| {
                     //let ind = [ind.0 as isize, ind.1 as isize, ind.2 as isize];
                     //get pointer at center of groud
-                    let sim_points = inds
+                    let mut sim_points = inds
                         .iter()
                         .map(|ind| grid.ind_to_point(&ind.map(|i| i as isize)))
                         .collect::<Vec<_>>();
-                    let point = inds
-                        .iter()
-                        .map(|ind| grid.ind_to_point(&ind.map(|i| i as isize)))
-                        .fold(Point3::origin(), |mut acc, p| {
-                            acc.coords += p.coords;
-                            acc
-                        })
-                        / inds.len() as f32;
-                    //let kriging_point = grid.ind_to_point(&ind);
+                    let point = sim_points.iter().fold(Point3::origin(), |mut acc, p| {
+                        acc.coords += p.coords;
+                        acc
+                    }) / inds.len() as f32;
 
                     //get nearest conditioning  points and values
                     let (cond_values, mut cond_points) = self.conditioning_data.query(&point);
@@ -178,10 +228,24 @@ where
                                 < simulation_order[inds[0].map(|ind| ind as usize)]
                         });
 
+                    // sim_cond_points
+                    //     .retain(|point| cond_points.iter().all(|cond_point| cond_point != point));
+
                     //append simulation points to conditioning points
                     cond_points.extend(sim_cond_points.iter());
 
-                    let mut mini_system = local_system.create_mini_system(
+                    //slightly shift points to avoid degenerate systems
+                    let cond_points = cond_points
+                        .iter_mut()
+                        .map(|point| {
+                            point.coords.x += local_rng.gen::<f32>() * 0.0001;
+                            point.coords.y += local_rng.gen::<f32>() * 0.0001;
+                            point.coords.z += local_rng.gen::<f32>() * 0.0001;
+                            *point
+                        })
+                        .collect_vec();
+
+                    let mini_system = local_system.create_mini_system(
                         &cond_points,
                         &sim_points,
                         &self.variogram_model,
@@ -191,6 +255,8 @@ where
                 },
             )
             .collect::<Vec<_>>();
+
+        println!("Finished building systems");
 
         sequential_data.into_iter().for_each(
             |(inds, sim_points, cond_values, sim_cond_inds, mut mini_system)| {
@@ -233,5 +299,113 @@ where
                 // grid.set_data_at_ind(&ind.map(|v| v as usize), value);
             },
         );
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{fs::File, io::Write};
+
+    use nalgebra::{UnitQuaternion, Vector3};
+    use num_traits::Float;
+    use rand::SeedableRng;
+
+    use crate::{
+        geometry::ellipsoid::Ellipsoid,
+        spatial_database::{
+            coordinate_system::{CoordinateSystem, GridSpacing},
+            gridded_databases::incomplete_grid::InCompleteGriddedDataBase,
+            normalized::Normalize,
+        },
+        variography::model_variograms::spherical::SphericalVariogram,
+    };
+
+    use super::*;
+    #[test]
+    fn gsgs_test() {
+        let coordinate_system = CoordinateSystem::new(
+            Point3::new(0.0, 0.0, 0.0).into(),
+            UnitQuaternion::from_euler_angles(0.0.to_radians(), 0.0.to_radians(), 0.0.to_radians()),
+        );
+        let mut gdb = InCompleteGriddedDataBase::from_csv_index(
+            "C:\\GitRepos\\terrustrial_test\\data\\walker.csv",
+            "X",
+            "Y",
+            "Z",
+            "V",
+            GridSpacing {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            },
+            coordinate_system,
+        )
+        .unwrap();
+
+        gdb.normalize();
+
+        let sim_grid_arr = Array3::<Option<f32>>::from_elem(gdb.shape(), None);
+        let mut sim_db = InCompleteGriddedDataBase::new(
+            sim_grid_arr,
+            gdb.grid_spacing().clone(),
+            CoordinateSystem::new(
+                Point3::new(0.0, 0.0, 0.0).into(),
+                UnitQuaternion::from_euler_angles(
+                    0.0.to_radians(),
+                    0.0.to_radians(),
+                    0.0.to_radians(),
+                ),
+            ),
+        );
+
+        let vgram_rot =
+            UnitQuaternion::from_euler_angles(0.0.to_radians(), 0.0.to_radians(), 0.0.to_radians());
+        let vgram_origin = Point3::new(0.0, 0.0, 0.0);
+        let vgram_coordinate_system = CoordinateSystem::new(vgram_origin.into(), vgram_rot);
+        let range = Vector3::new(450.0, 150.0, 1.0);
+        let sill = 1.0;
+        let nugget = 0.0;
+
+        let spherical_vgram =
+            SphericalVariogram::new(range, sill, nugget, vgram_coordinate_system.clone());
+
+        // create search ellipsoid
+        let search_ellipsoid = Ellipsoid::new(450.0, 150.0, 1.0, vgram_coordinate_system.clone());
+
+        let query_engine = GriddedDataBaseOctantQueryEngine::new(search_ellipsoid, &gdb, 16);
+        //create simple kriging
+
+        let gsgs = GSGS::new(
+            query_engine,
+            spherical_vgram,
+            GSGSParameters {
+                max_octant_cond_data: 16,
+                max_octant_sim_data: 16,
+                group_size: [4, 4, 1],
+            },
+        );
+
+        let mut rng = StdRng::seed_from_u64(0);
+
+        gsgs.simulate_grid(&mut sim_db, &mut rng);
+        //sgs.simulate_grid(&mut sim_db, &mut rng);
+
+        let (values, points) = sim_db.data_and_points();
+
+        println!("kriging");
+        //let values = simple_kriging.krig(kriging_points.as_slice());
+        let mut out = File::create("out.txt").unwrap();
+        out.write_all(b"surfs\n");
+        out.write_all(b"4\n");
+        out.write_all(b"x\n");
+        out.write_all(b"y\n");
+        out.write_all(b"z\n");
+        out.write_all(b"value\n");
+
+        println!("GRID");
+        for (point, value) in points.iter().zip(values.iter()) {
+            //println!("point: {:?}, value: {}", point, value);
+            out.write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+        }
     }
 }
