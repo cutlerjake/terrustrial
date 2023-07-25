@@ -128,7 +128,6 @@ where
             }
         }
 
-        //println!("Starting loop");
         // Note: We do not know the values so we can't populate the grid
         // But at each location in the grid we now all the points that will be previously simulated and the locations of the conditioning data
         // thus, we can solve for the weights in parrallel, then populate the grid sequentially
@@ -145,8 +144,7 @@ where
                     StdRng::from_entropy(),
                 ),
                 |(local_system, local_rng), inds| {
-                    //let ind = [ind.0 as isize, ind.1 as isize, ind.2 as isize];
-                    //get pointer at center of groud
+                    //get point at center of group
                     let sim_points = inds
                         .iter()
                         .map(|ind| grid.ind_to_point(&ind.map(|i| i as isize)))
@@ -169,9 +167,9 @@ where
                     //append simulation points to conditioning points
                     cond_points.extend(sim_cond_points.iter());
 
-                    //Cholesky error when simulating a point present in conditioning data
+                    // Cholesky error when simulating a point present in conditioning data
                     // this is a quick but not great fix
-                    //TODO: remove duplicate point(s) from sim_points and populate with conditioning value
+                    // TODO: remove duplicate point(s) from sim_points and populate with conditioning value
                     let cond_points = cond_points
                         .iter_mut()
                         .map(|point| {

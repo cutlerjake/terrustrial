@@ -78,7 +78,7 @@ Turrustrial is a geostats library written entirely in rust.
     let simple_kriging = SimpleKriging::new(gdb, spherical_vgram, search_ellipsoid, kriging_params);
 
     // Compute SK estimate at kriging points
-    let values = simple_kriging.krige(kriging_points.as_slice());
+    let values = simple_kriging.krig(kriging_points.as_slice());
 ```
 
  # Planned Features
@@ -88,7 +88,7 @@ Turrustrial is a geostats library written entirely in rust.
  - Pairwise relative experimental varigram
  - More theoretical varigorams (Exponential, Gaussian, Matern...)
    
- ## Estimation
+ ## Kriging
  - Ordinary Kriging
    
  ## Simulation

@@ -32,7 +32,10 @@ pub struct LUSystem {
 
 impl LUSystem {
     pub fn new(n_sim: usize, n_cond: usize) -> Self {
+        // L matrix will have dimensions of n_cond + n_Sim
         let n_total = n_sim + n_cond;
+
+        //create a buffer large enough to compute cholesky in place
         let cholesky_compute_mem = GlobalMemBuffer::new(
             faer_cholesky::llt::compute::cholesky_in_place_req::<f32>(
                 n_total,
@@ -42,6 +45,7 @@ impl LUSystem {
             .unwrap(),
         );
 
+        //create a buffer large enough to compute inverse of cholesky in place
         let cholesky_inv_mem = GlobalMemBuffer::new(
             faer_cholesky::llt::inverse::invert_lower_in_place_req::<f32>(
                 n_cond,
@@ -88,11 +92,7 @@ impl LUSystem {
 
         let mut cnt = 0;
 
-        // println!(
-        //     "Simd vec buffer capacity: {}",
-        //     self.simd_vec_buffer.capacity()
-        // );
-        //compute lower triangle of L matrix
+        //Compute Covariance values to populate lower triangle of L matrix
         for (i, p1) in l_points.iter().enumerate() {
             for p2 in l_points[0..=i].iter() {
                 let d = p1 - p2;
@@ -122,10 +122,9 @@ impl LUSystem {
             .iter()
             .map(|simd_point| vgram.vectorized_covariogram(*simd_point));
 
-        // println!("Simd vec buffer len: {}", self.simd_vec_buffer.len());
         let mut pop_cnt = 0;
 
-        //populate covariance matrix using lower triangle value
+        //populate L matrix with covariance matrix
         for i in 0..l_points.len() {
             for j in 0..=i {
                 if pop_cnt % 16 == 0 {
@@ -138,13 +137,12 @@ impl LUSystem {
             }
         }
 
-        // println!("COVMAT/n{:?}", self.l_mat);
-        // println!();
         //create dynstacks
         let mut cholesky_compute_stack = DynStack::new(&mut self.cholesky_compute_mem);
         let mut cholesky_inv_stack = DynStack::new(&mut self.cholesky_inv_mem);
 
         //compute cholseky decomposition of L matrix
+        // TODO: Return result, allowing caller to handle error
         compute::cholesky_in_place(
             self.l_mat.as_mut(),
             Parallelism::None,
@@ -153,18 +151,6 @@ impl LUSystem {
         )
         .expect("Error computing cholesky decomposition");
 
-        // println!("Cholesky computed");
-        // println!("CHOLMAT\n{:?}", self.l_mat);
-        // println!();
-
-        // println!("Making temp");
-        // let mut temp = self
-        //     .l_mat
-        //     .as_ref()
-        //     .submatrix(0, 0, self.n_cond, self.n_cond)
-        //     .to_owned();
-
-        // println!("Inverting");
         invert_lower_in_place(
             self.l_mat
                 .as_mut()
@@ -172,14 +158,6 @@ impl LUSystem {
             Parallelism::None,
             cholesky_inv_stack.rb_mut(),
         );
-        // faer_core::inverse::invert_lower_triangular(
-        //     temp.as_mut(),
-        //     self.l_mat
-        //         .as_ref()
-        //         .submatrix(0, 0, self.n_cond, self.n_cond),
-        //     Parallelism::None,
-        // );
-        // println!("Inverted");
     }
 
     #[inline(always)]
@@ -212,6 +190,7 @@ impl LUSystem {
         );
     }
 
+    #[inline(always)]
     fn set_dims(&mut self, num_cond: usize, num_sim: usize) {
         assert!(num_cond <= self.cond_size);
         assert!(num_sim <= self.sim_size);
@@ -225,6 +204,7 @@ impl LUSystem {
         }
     }
 
+    #[inline(always)]
     pub fn build_system<V>(
         &mut self,
         cond_points: &[Point3<f32>],
@@ -275,6 +255,7 @@ impl LUSystem {
         vals
     }
 
+    #[inline(always)]
     pub fn create_mini_system<V>(
         &mut self,
         cond_points: &[Point3<f32>],
