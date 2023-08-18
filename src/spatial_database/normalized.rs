@@ -19,7 +19,7 @@ where
 {
     fn normalize(&mut self) -> (T, T) {
         let (data, inds) = self.data_and_inds();
-        let mean = data.iter().map(|v| *v).sum::<T>() / T::from(data.len()).unwrap();
+        let mean = data.iter().copied().sum::<T>() / T::from(data.len()).unwrap();
         let variance =
             data.iter().map(|d| (*d - mean).powi(2)).sum::<T>() / T::from(data.len()).unwrap();
 

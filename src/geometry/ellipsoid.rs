@@ -56,12 +56,7 @@ impl Ellipsoid {
 
     /// Vectorized version of contains
     pub fn vectorized_contains(&self, points: &Point3<f32x16>) -> <f32x16 as SimdValue>::SimdBool {
-        let rot = self
-            .coordinate_system
-            .world_to_local
-            .rotation
-            .quaternion()
-            .clone();
+        let rot = *self.coordinate_system.world_to_local.rotation.quaternion();
         let trans = self.coordinate_system.world_to_local.translation;
 
         let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<f32x16>().into());
@@ -105,7 +100,7 @@ impl Ellipsoid {
         points.iter().enumerate().for_each(|(i, p)| {
             let point = self.coordinate_system.world_to_local.transform_point(p);
             let octant = octant(&point);
-            octant_points[octant as usize - 1].push(p.clone());
+            octant_points[octant as usize - 1].push(*p);
             octant_flag[octant as usize - 1].push(i);
         });
 
@@ -144,8 +139,7 @@ impl Geometry for Ellipsoid {
     }
 
     fn translate_to(&mut self, translation: &Point3<f32>) {
-        self.coordinate_system
-            .set_origin(translation.clone().into());
+        self.coordinate_system.set_origin(*translation);
     }
 
     fn vectorized_contains(&self, points: &Point3<f32x16>) -> <f32x16 as SimdValue>::SimdBool {

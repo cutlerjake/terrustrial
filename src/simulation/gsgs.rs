@@ -161,7 +161,7 @@ where
                     let (sim_cond_inds, sim_cond_points) =
                         sim_qe.nearest_inds_and_points_masked(&point, |neighbor_ind| {
                             simulation_order[neighbor_ind]
-                                < simulation_order[inds[0].map(|ind| ind as usize)]
+                                < simulation_order[inds[0].map(|ind| ind)]
                         });
 
                     //append simulation points to conditioning points
@@ -201,7 +201,7 @@ where
 
                 let values = cond_values
                     .into_iter()
-                    .chain(sim_values.into_iter())
+                    .chain(sim_values)
                     .collect::<Vec<_>>();
 
                 mini_system.populate_w_vec(values.as_slice(), rng);

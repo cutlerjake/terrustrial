@@ -530,7 +530,7 @@ mod tests {
 
         // create a grid to store the simulation values
         let krig_grid_arr = Array3::<Option<f32>>::from_elem(gdb.shape(), None);
-        let mut krig_db = InCompleteGriddedDataBase::new(
+        let krig_db = InCompleteGriddedDataBase::new(
             krig_grid_arr,
             gdb.grid_spacing().clone(),
             gdb.coordinate_system().clone(),

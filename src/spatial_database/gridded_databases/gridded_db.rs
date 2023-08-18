@@ -84,7 +84,7 @@ impl<T> RawGriddedDataBase<T> {
     /// Convert a point to a grid index defined by the ceiling of the normalized local coordinates
     pub fn grid_aligned_coord_to_high_ind(&self, point: &Point3<f32>) -> Option<[usize; 3]> {
         //normalize coords to block size
-        let point = self.normalize_point_to_grid_spacing(&point);
+        let point = self.normalize_point_to_grid_spacing(point);
 
         //set all point coordinates below 0 to 0
         let point = Point3::new(point.x.max(0.0), point.y.max(0.0), point.z.max(0.0));
@@ -99,7 +99,7 @@ impl<T> RawGriddedDataBase<T> {
     /// Convert a point to a grid index defined by the ceiling of the normalized local coordinates (may be negative)
     pub fn grid_aligned_coord_to_high_ind_with_negative(&self, point: &Point3<f32>) -> [isize; 3] {
         //normalize coords to block size
-        let point = self.normalize_point_to_grid_spacing(&point);
+        let point = self.normalize_point_to_grid_spacing(point);
 
         [
             point.x.ceil() as isize,
@@ -125,7 +125,7 @@ impl<T> RawGriddedDataBase<T> {
     /// Convert a point to a grid index defined by the floor of the normalized local coordinates
     pub fn grid_aligned_coord_to_low_ind(&self, point: &Point3<f32>) -> Option<[usize; 3]> {
         //normalize coords to block size
-        let point = self.normalize_point_to_grid_spacing(&point);
+        let point = self.normalize_point_to_grid_spacing(point);
 
         //set all point coordinates larger then grid dimension to grid dimension
         let point = Point3::new(
@@ -144,7 +144,7 @@ impl<T> RawGriddedDataBase<T> {
     /// Convert a point to a grid index defined by the floor of the normalized local coordinates (may be negative)
     pub fn grid_aligned_coord_to_low_ind_with_negative(&self, point: &Point3<f32>) -> [isize; 3] {
         //normalize coords to block size
-        let point = self.normalize_point_to_grid_spacing(&point);
+        let point = self.normalize_point_to_grid_spacing(point);
 
         [
             point.x.floor() as isize,
@@ -167,9 +167,9 @@ impl<T> RawGriddedDataBase<T> {
         let mut z = ind[2] as f32;
 
         //scale coords to grid
-        x = x * self.grid_spacing.x;
-        y = y * self.grid_spacing.y;
-        z = z * self.grid_spacing.z;
+        x *= self.grid_spacing.x;
+        y *= self.grid_spacing.y;
+        z *= self.grid_spacing.z;
 
         //create point
         let point = Point3::new(x, y, z);
@@ -185,9 +185,9 @@ impl<T> RawGriddedDataBase<T> {
         let mut z = ind[2] as f32;
 
         //scale coords to grid
-        x = x * self.grid_spacing.x;
-        y = y * self.grid_spacing.y;
-        z = z * self.grid_spacing.z;
+        x *= self.grid_spacing.x;
+        y *= self.grid_spacing.y;
+        z *= self.grid_spacing.z;
 
         //create point
         let point = Point3::new(x, y, z);

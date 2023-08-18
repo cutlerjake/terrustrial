@@ -133,7 +133,7 @@ impl VariogramToleranceGeometry {
         }
 
         //get distance between origin and point
-        let dist_point = distance(&point, &self.coordinate_system.origin());
+        let dist_point = distance(point, &self.coordinate_system.origin());
 
         //check if point is within lag tolerance
         let delta = dist_point - self.current_lag;
@@ -154,7 +154,7 @@ impl VariogramToleranceGeometry {
         let max_v_dist = dist_point * max_v_angle.sin();
 
         //check if point is within ellipse
-        let local_point = self.coordinate_system.global_to_local(&point);
+        let local_point = self.coordinate_system.global_to_local(point);
         if local_point.x < 0f32
             || (local_point.y / max_h_dist).powi(2) + (local_point.z / max_v_dist).powi(2)
                 > max_h_angle

@@ -75,7 +75,7 @@ impl CoordinateSystem {
 
     /// Vectorized version of global to local transformation
     pub fn vectorized_global_to_local_isomety(&self) -> Isometry3<f32x16> {
-        let rot = self.world_to_local.rotation.quaternion().clone();
+        let rot = *self.world_to_local.rotation.quaternion();
         let trans = self.world_to_local.translation;
 
         let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<f32x16>().into());
@@ -91,7 +91,7 @@ impl CoordinateSystem {
 
     /// Vectorized version of local to global transformation
     pub fn vectorized_local_to_global(&self) -> Isometry3<f32x16> {
-        let rot = self.local_to_world.rotation.quaternion().clone();
+        let rot = *self.local_to_world.rotation.quaternion();
         let trans = self.local_to_world.translation;
 
         let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<f32x16>().into());

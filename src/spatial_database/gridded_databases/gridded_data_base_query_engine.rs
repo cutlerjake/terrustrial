@@ -48,7 +48,7 @@ where
                 .coordinate_system()
                 .world_to_local
                 .transform_point(&p);
-            let octant = octant(&p.into());
+            let octant = octant(&p);
             octants[octant as usize - 1].push(offset);
         }
 
@@ -65,7 +65,7 @@ where
         //create query engine
         GriddedDataBaseOctantQueryEngine {
             octant_offsets: octants,
-            geometry: geometry,
+            geometry,
             max_octant_size,
             db: gdb,
             phantom: std::marker::PhantomData,

@@ -176,7 +176,7 @@ where
             self.parameters.tolerance.dip,
         );
 
-        for (point, point_value) in points.into_iter().zip(values.into_iter()) {
+        for (point, point_value) in points.into_iter().zip(values) {
             //coordinate system for point
             let point_cs = CoordinateSystem::new(point.into(), self.parameters.rotation);
 
