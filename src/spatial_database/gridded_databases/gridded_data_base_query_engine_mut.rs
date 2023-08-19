@@ -9,7 +9,7 @@ use crate::{
 use super::GriddedDataBaseInterface;
 
 /// Stores offsets for each octant of a geometry, allowing for fast queries of points in geometry
-pub struct GriddedDataBaseOctantQueryEngine<'a, G, GDB, T>
+pub struct GriddedDataBaseOctantQueryEngineMut<'a, G, GDB, T>
 where
     G: Geometry,
     GDB: GriddedDataBaseInterface<T>,
@@ -17,11 +17,11 @@ where
     pub(crate) octant_offsets: Vec<Vec<[isize; 3]>>,
     pub(crate) geometry: G,
     pub(crate) max_octant_size: usize,
-    pub(crate) db: &'a GDB,
+    pub(crate) db: &'a mut GDB,
     pub(crate) phantom: std::marker::PhantomData<T>,
 }
 
-impl<'a, G, GDB, T> GriddedDataBaseOctantQueryEngine<'a, G, GDB, T>
+impl<'a, G, GDB, T> GriddedDataBaseOctantQueryEngineMut<'a, G, GDB, T>
 where
     G: Geometry,
     GDB: GriddedDataBaseInterface<T>,
@@ -30,7 +30,7 @@ where
     /// # Arguments
     /// * `geometry` - The geometry to create the query engine for
     /// * `gdb` - The gridded database to use for the query engine
-    pub fn new(geometry: G, gdb: &'a GDB, max_octant_size: usize) -> Self {
+    pub fn new(geometry: G, gdb: &'a mut GDB, max_octant_size: usize) -> Self {
         let mut geometry = geometry;
         let ref_point = gdb.ind_to_point(&[0, 0, 0]);
         geometry.translate_to(&ref_point);
@@ -63,7 +63,7 @@ where
         });
 
         //create query engine
-        GriddedDataBaseOctantQueryEngine {
+        Self {
             octant_offsets: octants,
             geometry,
             max_octant_size,
@@ -185,6 +185,70 @@ where
 
     /// Get the nearest points and values to a point in the geometry
     /// # Arguments
+    /// * `ind` - The ind to get nearest inds for
+    /// * `octant_size` - The number of points to get from each octant
+    /// * `gdb` - The gridded database to use for the query engine
+    ///     * must have same grid size and orientation as gdb used for construction of query engine
+    pub fn nearest_inds_to_ind(&self, ind: &[usize; 3]) -> Vec<[usize; 3]> {
+        let _ = self.geometry;
+        //this only works if the grid ang geometry have similar orientation
+        //TODO: convert to high ind relative to geometry rotation
+        let mut inds = Vec::new();
+        for offsets in self.octant_offsets.iter() {
+            let mut oct_cnt = 0;
+            for offset in offsets {
+                let Some(ind) = self.db.offset_ind(*ind, *offset) else {
+                    continue;
+                };
+
+                if let Some(_) = self.db.data_at_ind(&ind) {
+                    inds.push(ind);
+                    oct_cnt += 1;
+                    if oct_cnt == self.max_octant_size {
+                        break;
+                    }
+                }
+            }
+        }
+
+        inds
+    }
+
+    /// Get the nearest points and values to a point in the geometry
+    /// # Arguments
+    /// * `ind` - The ind to get nearest inds for
+    /// * `octant_size` - The number of points to get from each octant
+    /// * `gdb` - The gridded database to use for the query engine
+    ///     * must have same grid size and orientation as gdb used for construction of query engine
+    pub fn nearest_inds_and_values_to_ind(&self, ind: &[usize; 3]) -> (Vec<[usize; 3]>, Vec<T>) {
+        let _ = self.geometry;
+        //this only works if the grid ang geometry have similar orientation
+        //TODO: convert to high ind relative to geometry rotation
+        let mut inds = Vec::new();
+        let mut values = Vec::new();
+        for offsets in self.octant_offsets.iter() {
+            let mut oct_cnt = 0;
+            for offset in offsets {
+                let Some(ind) = self.db.offset_ind(*ind, *offset) else {
+                    continue;
+                };
+
+                if let Some(val) = self.db.data_at_ind(&ind) {
+                    inds.push(ind);
+                    values.push(val);
+                    oct_cnt += 1;
+                    if oct_cnt == self.max_octant_size {
+                        break;
+                    }
+                }
+            }
+        }
+
+        (inds, values)
+    }
+
+    /// Get the nearest points and values to a point in the geometry
+    /// # Arguments
     /// * `point` - The point to get the nearest points and values for
     /// * `octant_size` - The number of points to get from each octant
     /// * `gdb` - The gridded database to use for the query engine
@@ -235,7 +299,7 @@ where
     }
 }
 
-impl<'a, G, GDB, T> SpatialQueryable<T, G> for GriddedDataBaseOctantQueryEngine<'a, G, GDB, T>
+impl<'a, G, GDB, T> SpatialQueryable<T, G> for GriddedDataBaseOctantQueryEngineMut<'a, G, GDB, T>
 where
     G: Geometry,
     GDB: GriddedDataBaseInterface<T>,

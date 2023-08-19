@@ -7,6 +7,7 @@ use super::coordinate_system::{CoordinateSystem, GridSpacing};
 
 pub mod complete_grid;
 pub mod gridded_data_base_query_engine;
+pub mod gridded_data_base_query_engine_mut;
 pub mod gridded_db;
 pub mod incomplete_grid;
 

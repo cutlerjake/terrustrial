@@ -5,7 +5,8 @@ use simba::simd::f32x16;
 use crate::spatial_database::coordinate_system::CoordinateSystem;
 
 pub mod ellipsoid;
-pub mod variogram_tolerance_geometry;
+pub mod template;
+pub mod tolerance;
 
 pub trait Geometry {
     fn bounding_box(&self) -> Aabb;

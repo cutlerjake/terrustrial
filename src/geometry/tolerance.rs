@@ -5,7 +5,7 @@ use parry3d::bounding_volume::Aabb;
 use crate::spatial_database::coordinate_system::CoordinateSystem;
 
 /// Variogram tolerance geometry used to identify valid point pairs for variogram computation.
-pub struct VariogramToleranceGeometry {
+pub struct ToleranceGeometry {
     pub coordinate_system: CoordinateSystem,
     pub current_location: Point3<f32>,
     pub lag_tolerance_backwards: f32,
@@ -17,7 +17,7 @@ pub struct VariogramToleranceGeometry {
     pub current_lag: f32,
 }
 
-impl VariogramToleranceGeometry {
+impl ToleranceGeometry {
     /// Create a new VariogramToleranceGeometry with the given parameters.
     /// # Arguments
     /// * `coordinate_system` - The coordinate system of the geometry (Location and orientation).

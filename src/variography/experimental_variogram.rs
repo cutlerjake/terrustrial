@@ -1,6 +1,6 @@
 use crate::{
-    geometry::variogram_tolerance_geometry::VariogramToleranceGeometry,
-    spatial_database::coordinate_system::CoordinateSystem, spatial_database::SpatialDataBase,
+    geometry::tolerance::ToleranceGeometry, spatial_database::coordinate_system::CoordinateSystem,
+    spatial_database::SpatialDataBase,
 };
 use nalgebra::UnitQuaternion;
 
@@ -166,7 +166,7 @@ where
         let (values, points) = database.data_and_points();
 
         //create a variogram tolerance geometry
-        let mut vgram_tolerance_geometry = VariogramToleranceGeometry::new(
+        let mut vgram_tolerance_geometry = ToleranceGeometry::new(
             CoordinateSystem::default(),
             self.parameters.lag.lag_tolerance,
             self.parameters.lag.lag_tolerance,
