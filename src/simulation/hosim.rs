@@ -1,4 +1,4 @@
-use std::{fs::File, io::Write};
+use std::{collections::HashMap, fs::File, io::Write};
 
 use itertools::Itertools;
 use mathru::algebra::abstr::Polynomial;
@@ -48,6 +48,10 @@ impl<'a> CDFSampler<'a> {
 
         self.val[index - 1] + fraction * (self.val[index] - self.val[index - 1])
     }
+}
+
+pub struct ReplicateDatabase {
+    replicates: HashMap<Template, Vec<Vec<f32>>>,
 }
 
 pub struct HOSIM {
@@ -140,7 +144,7 @@ impl HOSIM {
             let replicates = self.find_replicates_in_ti(&data_event_template);
 
             //compute cdf
-            let cdf = self.compute_cdf(data_event_values.clone(), replicates.clone());
+            let cdf = self.compute_cdf_inc(data_event_values.clone(), replicates.clone());
             // println!("CDF: {:?}", cdf);
             // println!("Data event values: {:?}", data_event_values);
             // println!("Replicates: {:?}", replicates);

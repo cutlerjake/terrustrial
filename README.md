@@ -1,3 +1,6 @@
+![terrustrial logo](assets/logo.svg?raw=true)
+
+
 # terrustrial
 Turrustrial is a geostats library written entirely in rust.
 
@@ -7,6 +10,7 @@ Turrustrial is a geostats library written entirely in rust.
 - simple kriging (parallel and vectorized)
 - SGS (parallel and vectorized)
 - GSGS (parallel and vectorized)
+- HOSIM (VERY SLOW optimization to come)
 
 # Usage
 
