@@ -209,18 +209,17 @@ where
                 let Some(ind) = self.db.offset_ind(point_ind, *offset) else {
                     continue;
                 };
+                //print!("ind: {:?}, ", ind);
 
                 if !mask(ind) {
                     continue;
                 }
-                if let Some(_) = self.db.data_at_ind(&ind) {
-                    let p = self.db.ind_to_point(&ind.map(|x| x as isize));
-                    inds.push(ind);
-                    points.push(p);
-                    oct_cnt += 1;
-                    if oct_cnt == self.max_octant_size {
-                        break;
-                    }
+                let p = self.db.ind_to_point(&ind.map(|x| x as isize));
+                inds.push(ind);
+                points.push(p);
+                oct_cnt += 1;
+                if oct_cnt == self.max_octant_size {
+                    break;
                 }
             }
         }

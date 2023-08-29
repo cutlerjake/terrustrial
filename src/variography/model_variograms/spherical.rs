@@ -47,7 +47,8 @@ impl SphericalVariogram {
         let iso_h = h.norm();
 
         if iso_h == 0f32 {
-            0f32
+            //0f32
+            self.nugget
         } else if iso_h <= 1f32 {
             self.nugget + (self.sill - self.nugget) * (1.5 * iso_h - 0.5 * iso_h.powi(3))
         } else {
@@ -63,12 +64,6 @@ impl SphericalVariogram {
     #[inline(always)]
     pub fn vectorized_variogram(&self, h: Vector3<f32x16>) -> f32x16 {
         let mut h = self.vec_rotation.transform_vector(&h);
-        // let h = self.coordinate_system.global_to_local(&h.into());
-        // let iso_h = f32::sqrt(
-        //     (h.x / self.range.x).powi(2)
-        //         + (h.y / self.range.y).powi(2)
-        //         + (h.z / self.range.z).powi(2),
-        // );
 
         let rx = f32x16::splat(self.range.x);
         let ry = f32x16::splat(self.range.y);
@@ -85,11 +80,11 @@ impl SphericalVariogram {
         let simd_0_5 = f32x16::splat(0.5);
 
         //create simd variance
-        let mut simd_v =
-            (simd_sill - simd_nugget) * (simd_1_5 * iso_h - simd_0_5 * iso_h * iso_h * iso_h);
+        let mut simd_v = simd_nugget
+            + (simd_sill - simd_nugget) * (simd_1_5 * iso_h - simd_0_5 * iso_h * iso_h * iso_h);
 
-        //set lanes of simd variance to 0 where lanes of iso_h == 0.0
-        simd_v = simd_v.select(mask, f32x16::splat(0.0));
+        //set lanes of simd variance to nugget where lanes of iso_h == 0.0
+        simd_v = simd_v.select(mask, f32x16::splat(self.nugget));
 
         let mask = iso_h.simd_le(f32x16::splat(1.0));
 

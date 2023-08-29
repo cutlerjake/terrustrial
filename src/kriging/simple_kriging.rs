@@ -500,7 +500,7 @@ mod tests {
     }
 
     #[test]
-    fn sgs_test() {
+    fn sk_test() {
         // Define the coordinate system for the grid
         // origing at x = 0, y = 0, z = 0
         // azimuth = 0, dip = 0, plunge = 0

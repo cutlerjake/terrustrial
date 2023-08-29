@@ -1,8 +1,8 @@
 ![terrustrial logo](assets/logo.svg?raw=true)
 
 
-# terrustrial
-Turrustrial is a geostats library written entirely in rust.
+
+Turrustrial is an experimental geostats library written entirely in rust with a focus on performance.
 
 # Implemented Features
 - Experimental variogram computation

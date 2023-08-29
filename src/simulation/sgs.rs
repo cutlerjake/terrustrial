@@ -66,7 +66,7 @@ where
                 * 8,
         );
 
-        // create queary engine for simulation grid
+        // create query engine for simulation grid
         let geometry = self.conditioning_data.geometry().clone();
         let sim_qe = GriddedDataBaseOctantQueryEngine::new(
             geometry.clone(),
@@ -192,7 +192,7 @@ mod test {
         // origing at x = 0, y = 0, z = 0
         // azimuth = 0, dip = 0, plunge = 0
         let coordinate_system = CoordinateSystem::new(
-            Point3::new(0.0, 0.0, 0.0).into(),
+            Point3::new(0.01, 0.01, 0.01).into(),
             UnitQuaternion::from_euler_angles(0.0.to_radians(), 0.0.to_radians(), 0.0.to_radians()),
         );
 
@@ -220,7 +220,14 @@ mod test {
         let mut sim_db = InCompleteGriddedDataBase::new(
             sim_grid_arr,
             gdb.grid_spacing().clone(),
-            gdb.coordinate_system().clone(),
+            CoordinateSystem::new(
+                Point3::new(0.0, 0.0, 0.0).into(),
+                UnitQuaternion::from_euler_angles(
+                    0.0.to_radians(),
+                    0.0.to_radians(),
+                    0.0.to_radians(),
+                ),
+            ),
         );
 
         // create a spherical variogram
