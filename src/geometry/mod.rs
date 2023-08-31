@@ -1,6 +1,7 @@
-use nalgebra::{Point3, SimdValue};
+use nalgebra::Point3;
 use parry3d::bounding_volume::Aabb;
 use simba::simd::f32x16;
+use simba::simd::SimdValue;
 
 use crate::spatial_database::coordinate_system::CoordinateSystem;
 

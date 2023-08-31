@@ -55,6 +55,7 @@ impl Ellipsoid {
     }
 
     /// Vectorized version of contains
+    #[inline(always)]
     pub fn vectorized_contains(&self, points: &Point3<f32x16>) -> <f32x16 as SimdValue>::SimdBool {
         let rot = *self.coordinate_system.world_to_local.rotation.quaternion();
         let trans = self.coordinate_system.world_to_local.translation;

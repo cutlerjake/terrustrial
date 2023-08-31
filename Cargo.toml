@@ -9,18 +9,22 @@ debug = true
 lto = "fat"
 incremental = true
 
+
 [dependencies]
 approx = "0.5.1"
 faer = "0.7.0"
 faer-core = "0.9.1"
 faer-cholesky = "0.9.1"
-nalgebra = "0.32.2"
+nalgebra = { version = "0.32.3", features = ["std"] }
 ndarray = "0.15.6"
 num-traits = "0.2.15"
 parry3d = { version = "0.13.5", features = ["simd-stable"] }
 rand = "0.8.5"
 rstar = "0.11.0"
 dyn-stack = "0.9.0"
+# simba = { git = "https://github.com/dimforge/simba.git", branch = "master", features = [
+#     "packed_simd",
+# ] }
 simba = { version = "0.8.1", features = ["packed_simd"] }
 bitvec = "1.0.1"
 ordered-float = "3.7.0"
@@ -36,4 +40,4 @@ mathru = "0.15.2"
 #simply updates dependency to packed_simd 0.3.9
 #subscribed to merge request on github, remove when merged
 [patch.crates-io]
-simba = { path = ".\\patches\\simba" }
+simba = { git = "https://github.com/dimforge/simba.git" }

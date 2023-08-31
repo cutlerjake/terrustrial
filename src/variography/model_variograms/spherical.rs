@@ -8,6 +8,9 @@ use simba::simd::f32x16;
 use simba::simd::SimdPartialOrd;
 use simba::simd::SimdValue;
 
+// use std::simd::f32x16;
+// use std::simd::SimdPartialOrd;
+
 pub struct SphericalVariogram {
     range: Vector3<f32>,
     sill: f32,
@@ -115,13 +118,17 @@ impl VariogramModel for SphericalVariogram {
         self.covariogram(h)
     }
 
+    #[inline(always)]
     fn c_0(&self) -> f32 {
         self.sill
     }
 
+    #[inline(always)]
     fn vectorized_variogram(&self, h: Vector3<f32x16>) -> f32x16 {
         self.vectorized_variogram(h)
     }
+
+    #[inline(always)]
     fn vectorized_covariogram(&self, h: Vector3<f32x16>) -> f32x16 {
         self.vectorized_covariogram(h)
     }

@@ -1,5 +1,6 @@
 use core::panic;
 
+use indicatif::ParallelProgressIterator;
 use itertools::{iproduct, Itertools};
 use nalgebra::Point3;
 use ndarray::Array3;
@@ -151,6 +152,7 @@ where
         // thus, we can solve for the weights in parrallel, then populate the grid sequentially
         let sequential_data = path
             .par_iter()
+            .progress()
             .map_with(
                 (
                     LUSystem::new(
@@ -211,68 +213,6 @@ where
             )
             .collect::<Vec<_>>();
 
-        // let mut local_rng = StdRng::from_entropy();
-        // let sequential_data = path
-        //     .par_iter()
-        //     .map(|inds| {
-        //         let mut local_system = LUSystem::new(
-        //             self.gsgs_parameters.group_size.iter().product(),
-        //             (self.gsgs_parameters.max_octant_cond_data
-        //                 + 200
-        //                 + self.gsgs_parameters.max_octant_sim_data
-        //                 + 200)
-        //                 * 8,
-        //         );
-        //         //get point at center of group
-        //         let sim_points = inds
-        //             .iter()
-        //             .map(|ind| grid.ind_to_point(&ind.map(|i| i as isize)))
-        //             .collect::<Vec<_>>();
-        //         let point = sim_points.iter().fold(Point3::origin(), |mut acc, p| {
-        //             acc.coords += p.coords;
-        //             acc
-        //         }) / inds.len() as f32;
-
-        //         //get nearest conditioning  points and values
-        //         let (cond_values, mut cond_points) = self.conditioning_data.query(&point);
-
-        //         // get nearest simulation points
-        //         let (sim_cond_inds, sim_cond_points) =
-        //             sim_qe.nearest_inds_and_points_masked(&point, |neighbor_ind| {
-        //                 //false
-        //                 //true
-        //                 simulation_order[neighbor_ind] < simulation_order[inds[0]]
-        //             });
-
-        //         //println!("sim_cond_inds: {}", sim_cond_inds.len());
-
-        //         //append simulation points to conditioning points
-        //         cond_points.extend(sim_cond_points.iter());
-
-        //         // Cholesky error when simulating a point present in conditioning data
-        //         // this is a quick but not great fix
-        //         // TODO: remove duplicate point(s) from sim_points and populate with conditioning value
-        //         // let cond_points = cond_points
-        //         //     .iter_mut()
-        //         //     .map(|point| {
-        //         //         point.coords.x += local_rng.gen::<f32>() * 0.0001;
-        //         //         point.coords.y += local_rng.gen::<f32>() * 0.0001;
-        //         //         point.coords.z += local_rng.gen::<f32>() * 0.0001;
-        //         //         *point
-        //         //     })
-        //         //     .collect_vec();
-
-        //         let mini_system = local_system.create_mini_system(
-        //             &cond_points,
-        //             &sim_points,
-        //             &self.variogram_model,
-        //         );
-
-        //         (inds, cond_values, sim_cond_inds, mini_system)
-        //     })
-        //     .collect::<Vec<_>>();
-
-        let mut i = 0;
         sequential_data.into_iter().for_each(
             |(inds, cond_values, sim_cond_inds, mut mini_system)| {
                 //get simulation values
@@ -384,16 +324,16 @@ mod test {
         //let search_ellipsoid = Ellipsoid::new(500.0, 500.0, 1.0, vgram_coordinate_system.clone());
 
         // create a query engine for the conditioning data
-        let query_engine = GriddedDataBaseOctantQueryEngine::new(search_ellipsoid, &gdb, 20);
+        let query_engine = GriddedDataBaseOctantQueryEngine::new(search_ellipsoid, &gdb, 40);
 
         // create a gsgs system
         let gsgs = GSGS::new(
             query_engine,
             spherical_vgram,
             GSGSParameters {
-                max_octant_cond_data: 20,
-                max_octant_sim_data: 20,
-                group_size: [10, 10, 1],
+                max_octant_cond_data: 40,
+                max_octant_sim_data: 40,
+                group_size: [10, 10, 10],
             },
         );
 

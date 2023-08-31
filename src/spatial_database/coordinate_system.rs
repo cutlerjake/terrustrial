@@ -2,6 +2,8 @@ use nalgebra::{Isometry, Isometry3, Point3, Translation3, UnitQuaternion};
 
 use simba::simd::f32x16;
 
+//use std::simd::f32x16;
+
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct GridSpacing {
     pub x: f32,
