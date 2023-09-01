@@ -4,6 +4,14 @@
 
 Turrustrial is an experimental geostats library written entirely in rust with a focus on performance.
 
+# IMPORTANT
+simba 0.8.1 does not build with the latest nightly rust compiler. Please add the following to cargo.toml to patch simba to a working but unpublished version.
+
+```toml
+[patch.crates-io]
+simba = { git = "https://github.com/dimforge/simba.git", branch = "master" }
+```
+
 # Implemented Features
 - Experimental variogram computation
 - Spherical variogram
