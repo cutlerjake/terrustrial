@@ -40,4 +40,4 @@ mathru = "0.15.2"
 #simply updates dependency to packed_simd 0.3.9
 #subscribed to merge request on github, remove when merged
 [patch.crates-io]
-simba = { git = "https://github.com/dimforge/simba.git" }
+simba = { git = "https://github.com/dimforge/simba.git", branch = "master" }

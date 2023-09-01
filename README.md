@@ -98,5 +98,4 @@ Turrustrial is an experimental geostats library written entirely in rust with a 
  ## Simulation
  - Gaussian simulation methods (DBSIM)
  - Multi-point simulation methods (SNESIM, FILTERSIM)
- - High-Order simulation methods (HOSIM)
 
