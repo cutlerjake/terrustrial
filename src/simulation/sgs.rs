@@ -112,28 +112,21 @@ where
                 //append simulation points to conditioning points
                 cond_points.extend(sim_points.iter());
 
-                //set dimension of kriging system
-                local_system.set_dim(cond_points.len());
-
-                //build kriging system for point
-                local_system.vectorized_build_covariance_matrix_and_vector(
+                let mini_system = local_system.build_mini_system(
                     cond_points.as_slice(),
                     &point,
                     &self.variogram_model,
                 );
 
-                //compute weights of kriging system
-                local_system.compute_weights();
-                let weights = local_system.weights.clone();
-                let cov_vec = local_system.krig_point_cov_vec.clone();
-
-                (ind, cond_values, sim_inds, weights, cov_vec)
+                (ind, cond_values, sim_inds, mini_system)
             })
             .collect::<Vec<_>>();
 
+        let mut values_mat = kriging_system.values.clone();
+
         sequential_data
             .into_iter()
-            .for_each(|(ind, cond_values, sim_inds, weights, cov_vec)| {
+            .for_each(|(ind, cond_values, sim_inds, mini_system)| {
                 //get simulation values
                 let sim_values = sim_inds
                     .iter()
@@ -146,18 +139,19 @@ where
                     .collect::<Vec<_>>();
 
                 //store values and weights in kriging system
-                unsafe { kriging_system.values.set_dims(values.len(), 1) };
+                unsafe {
+                    values_mat.set_dims(values.len(), 1);
+                };
                 for i in 0..values.len() {
-                    unsafe { kriging_system.values.write_unchecked(i, 0, *values[i]) };
+                    unsafe { values_mat.write_unchecked(i, 0, *values[i]) };
                 }
-                kriging_system.weights = weights;
-                kriging_system.krig_point_cov_vec = cov_vec;
 
                 //compute mean
-                let mean = kriging_system.estimate();
+                let mean = mini_system.estimate(values_mat.as_ref());
+                //assert!(mean == mini_mean);
 
                 //compute variance
-                let variance = kriging_system.variance();
+                let variance = mini_system.variance();
 
                 let value = mean + Normal::new(0.0, variance).unwrap().sample(rng);
 

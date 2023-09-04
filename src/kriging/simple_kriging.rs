@@ -7,7 +7,7 @@ use crate::{
 
 use dyn_stack::{DynStack, GlobalMemBuffer, ReborrowMut};
 use faer_cholesky::llt::compute;
-use faer_core::{mul::inner_prod::inner_prod_with_conj, Conj, Mat, Parallelism};
+use faer_core::{mul::inner_prod::inner_prod_with_conj, Conj, Mat, MatRef, Parallelism};
 use indicatif::ParallelProgressIterator;
 use nalgebra::{Point3, Vector3};
 use rayon::prelude::*;
@@ -336,6 +336,73 @@ impl SimpleKrigingSystem {
                 self.weights.as_ref(),
                 Conj::No,
                 self.krig_point_cov_vec.as_ref(),
+                Conj::No,
+            )
+    }
+
+    /// Build the system for SK and compute the weights
+    /// # Arguments
+    /// * `cond_points` - The conditioning points for the kriging point
+    /// * `cond_values` - The conditioning values for the kriging point
+    /// * `kriging_point` - The kriging point
+    /// * 'vgram' - The variogram model
+    #[inline(always)]
+    pub fn build_mini_system<V>(
+        &mut self,
+        cond_points: &[Point3<f32>],
+        kriging_point: &Point3<f32>,
+        vgram: &V,
+    ) -> MiniSKSystem
+    where
+        V: VariogramModel,
+    {
+        //set dimensions
+        self.set_dim(cond_points.len());
+
+        //build covariance matrix and vector
+        self.vectorized_build_covariance_matrix_and_vector(cond_points, kriging_point, vgram);
+
+        self.c_0 = vgram.c_0();
+
+        //compute kriging weights
+        self.compute_weights();
+
+        MiniSKSystem {
+            c_0: self.c_0,
+            weights: self.weights.clone(),
+            cov_vec: self.krig_point_cov_vec.clone(),
+        }
+    }
+}
+
+pub struct MiniSKSystem {
+    c_0: f32,
+    weights: Mat<f32>,
+    cov_vec: Mat<f32>,
+}
+
+impl MiniSKSystem {
+    #[inline(always)]
+    pub fn new(c_0: f32, weights: Mat<f32>, cov_vec: Mat<f32>) -> Self {
+        Self {
+            c_0,
+            weights,
+            cov_vec,
+        }
+    }
+
+    #[inline(always)]
+    pub fn estimate(&self, values: MatRef<f32>) -> f32 {
+        inner_prod_with_conj(values, Conj::No, self.weights.as_ref(), Conj::No)
+    }
+
+    #[inline(always)]
+    pub fn variance(&self) -> f32 {
+        self.c_0
+            - inner_prod_with_conj(
+                self.weights.as_ref(),
+                Conj::No,
+                self.cov_vec.as_ref(),
                 Conj::No,
             )
     }

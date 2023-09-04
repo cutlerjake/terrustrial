@@ -180,22 +180,6 @@ impl LUSystem {
     fn compute_intermediate_mat(&mut self) {
         let mut solve_stack = DynStack::new(&mut self.solve_mem);
 
-        // println!("intermediate {:?}", self.intermediate_mat.transpose());
-        // println!(
-        //     "L_dd {:?}",
-        //     self.l_mat
-        //         .as_ref()
-        //         .submatrix(0, 0, self.n_cond, self.n_cond)
-        //         .transpose()
-        // );
-        // println!(
-        //     "L_gd {:?}",
-        //     self.l_mat
-        //         .as_ref()
-        //         .submatrix(self.n_cond, 0, self.n_sim, self.n_cond)
-        //         .transpose()
-        // );
-
         let mut intermediate = self
             .l_mat
             .as_ref()
@@ -212,47 +196,6 @@ impl LUSystem {
         );
 
         self.intermediate_mat = intermediate.transpose().to_owned();
-        // solve_transpose_with_conj(
-        //     self.intermediate_mat.as_mut().transpose(),
-        //     self.l_mat
-        //         .as_ref()
-        //         .submatrix(0, 0, self.n_cond, self.n_cond)
-        //         .transpose(),
-        //     Conj::No,
-        //     l_gd_t.as_ref(),
-        //     Parallelism::None,
-        //     solve_stack.rb_mut(),
-        // );
-        // println!("intermediate {:?}", self.intermediate_mat.transpose());
-        // println!(
-        //     "L_dd {:?}",
-        //     self.l_mat
-        //         .as_ref()
-        //         .submatrix(0, 0, self.n_cond, self.n_cond)
-        //         .transpose()
-        // );
-        // println!(
-        //     "L_gd {:?}",
-        //     self.l_mat
-        //         .as_ref()
-        //         .submatrix(self.n_cond, 0, self.n_sim, self.n_cond)
-        //         .transpose()
-        // );
-        // mul::triangular::matmul(
-        //     self.intermediate_mat.as_mut(),
-        //     BlockStructure::Rectangular,
-        //     self.l_mat
-        //         .as_ref()
-        //         .submatrix(self.n_cond, 0, self.n_sim, self.n_cond),
-        //     BlockStructure::Rectangular,
-        //     self.l_mat
-        //         .as_ref()
-        //         .submatrix(0, 0, self.n_cond, self.n_cond),
-        //     BlockStructure::TriangularLower,
-        //     None,
-        //     1.0,
-        //     Parallelism::None,
-        // );
     }
 
     #[inline(always)]
@@ -380,7 +323,7 @@ pub struct MiniLUSystem {
     pub n_cond: usize,
     pub l_gg: Mat<f32>,
     pub intermediate_mat: Mat<f32>,
-    pub w_vec: Mat<f32>,
+    pub w_vec: Mat<f32>, // consider not storing w vec on this struct to avoid reallocating memory in hot loop
 }
 
 impl MiniLUSystem {
