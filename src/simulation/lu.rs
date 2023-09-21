@@ -2,11 +2,12 @@ use core::panic;
 
 use crate::variography::model_variograms::VariogramModel;
 
-use dyn_stack::{DynStack, GlobalMemBuffer, ReborrowMut};
+use dyn_stack::{DynStack, GlobalMemBuffer, ReborrowMut, StackReq};
 use faer_cholesky::llt::{
     compute,
     inverse::invert_lower_in_place,
     solve::{solve_transpose_req, solve_transpose_with_conj},
+    CholeskyError,
 };
 use faer_core::solve::solve_upper_triangular_in_place;
 use faer_core::{
@@ -23,8 +24,7 @@ pub struct LUSystem {
     pub l_mat: Mat<f32>,
     pub w_vec: Mat<f32>,
     pub intermediate_mat: Mat<f32>,
-    pub cholesky_compute_mem: GlobalMemBuffer,
-    pub solve_mem: GlobalMemBuffer,
+    buffer: GlobalMemBuffer,
     pub n_sim: usize,
     pub n_cond: usize,
     pub n_total: usize,
@@ -43,26 +43,20 @@ impl LUSystem {
         let n_total = n_sim + n_cond;
 
         //create a buffer large enough to compute cholesky in place
-        let cholesky_compute_mem = GlobalMemBuffer::new(
-            faer_cholesky::llt::compute::cholesky_in_place_req::<f32>(
-                n_total,
-                Parallelism::None,
-                Default::default(),
-            )
-            .unwrap(),
-        );
+        let cholesky_required_mem = faer_cholesky::llt::compute::cholesky_in_place_req::<f32>(
+            n_total,
+            Parallelism::None,
+            Default::default(),
+        )
+        .unwrap();
 
-        //create a buffer large enough to compute inverse of cholesky in place
-        let intermediate_mem = GlobalMemBuffer::new(
-            solve_transpose_req::<f32>(n_cond, n_cond, Parallelism::None).unwrap(),
-        );
+        let buffer = GlobalMemBuffer::new(cholesky_required_mem);
 
         Self {
             l_mat: Mat::zeros(n_total, n_total),
             w_vec: Mat::zeros(n_total, 1),
             intermediate_mat: Mat::zeros(n_sim, n_cond),
-            cholesky_compute_mem,
-            solve_mem: intermediate_mem,
+            buffer,
             n_sim,
             n_cond,
             n_total,
@@ -82,7 +76,8 @@ impl LUSystem {
         cond_points: &[Point3<f32>],
         sim_points: &[Point3<f32>],
         vgram: &V,
-    ) where
+    ) -> Result<(), CholeskyError>
+    where
         V: VariogramModel,
     {
         unsafe { self.simd_vec_buffer.set_len(0) };
@@ -141,36 +136,25 @@ impl LUSystem {
         }
 
         //create dynstacks
-        let mut cholesky_compute_stack = DynStack::new(&mut self.cholesky_compute_mem);
-        //let mut cholesky_inv_stack = DynStack::new(&mut self.cholesky_inv_mem);
-
-        //println!("Computing cholesky for L matrix \n{:?}", self.l_mat);
+        //let mut cholesky_compute_stack = DynStack::new(&mut self.cholesky_compute_mem);
+        let mut cholesky_compute_stack = DynStack::new(&mut self.buffer);
 
         //compute cholseky decomposition of L matrix
-        // TODO: Return result, allowing caller to handle error
         compute::cholesky_in_place(
             self.l_mat.as_mut(),
             Parallelism::None,
             cholesky_compute_stack.rb_mut(),
             Default::default(),
         )
-        .expect("Error computing cholesky decomposition");
-
-        // invert_lower_in_place(
-        //     self.l_mat
-        //         .as_mut()
-        //         .submatrix(0, 0, self.n_cond, self.n_cond),
-        //     Parallelism::None,
-        //     cholesky_inv_stack.rb_mut(),
-        // );
     }
 
     #[inline(always)]
     fn populate_w_vec(&mut self, values: &[f32], rng: &mut StdRng) {
-        //populate w vector
+        //populate w vector with conditioning points
         for (i, v) in values.iter().enumerate() {
             self.w_vec.write(i, 0, *v);
         }
+        // fill remaining values with random numbers
         for i in values.len()..self.w_vec.nrows() {
             self.w_vec.write(i, 0, rng.sample(StandardNormal));
         }
@@ -178,14 +162,16 @@ impl LUSystem {
 
     #[inline(always)]
     fn compute_intermediate_mat(&mut self) {
-        let mut solve_stack = DynStack::new(&mut self.solve_mem);
-
+        //TODO: These are disjoint views of the same matrix, avoid copying
         let mut intermediate = self
             .l_mat
             .as_ref()
             .submatrix(self.n_cond, 0, self.n_sim, self.n_cond)
             .transpose()
             .to_owned();
+
+        //Want to compute L_gd @ L_dd^-1
+        //avoid inverting L_dd by solving L_dd^T * intermediate^T = L_dg^T
         solve_upper_triangular_in_place(
             self.l_mat
                 .as_ref()
@@ -240,6 +226,8 @@ impl LUSystem {
     #[inline(always)]
     pub fn simulate(&self) -> Vec<f32> {
         let mut sim_mat = Mat::zeros(self.n_sim, 1);
+
+        //L_gd @ L_dd^-1 @ w_d
         mul::matvec::matvec_with_conj(
             sim_mat.as_mut(),
             self.intermediate_mat.as_ref(),
@@ -249,6 +237,7 @@ impl LUSystem {
             None,
             1.0,
         );
+        //L_gg @ w_g
         mul::matvec::matvec_with_conj(
             sim_mat.as_mut(),
             self.l_mat
@@ -281,16 +270,9 @@ impl LUSystem {
     {
         let n_cond = cond_points.len();
         let n_sim = sim_points.len();
-        // println!(
-        //     "Trying to create mini system of size {:?}, with capacity {:?}",
-        //     (n_sim, n_cond),
-        //     (self.sim_size, self.cond_size),
-        // );
-        // println!("Setting dims");
+
         self.set_dims(n_cond, n_sim);
-        // println!("Building system");
         self.vectorized_build_l_matrix(cond_points, sim_points, vgram);
-        // println!("Computing intermediate mat");
         self.compute_intermediate_mat();
 
         let l_gg = self

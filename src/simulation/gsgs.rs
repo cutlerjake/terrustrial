@@ -190,7 +190,7 @@ where
                     cond_points.extend(sim_cond_points.iter());
 
                     // Cholesky error when simulating a point present in conditioning data
-                    // this is a quick but not great fix
+                    // this is a quick but not great fix (randomly shift point by very small value)
                     // TODO: remove duplicate point(s) from sim_points and populate with conditioning value
                     // let cond_points = cond_points
                     //     .iter_mut()
@@ -289,8 +289,7 @@ mod test {
         gdb.normalize();
 
         // create a grid to store the simulation values
-        let sim_grid_arr =
-            Array3::<Option<f32>>::from_elem([gdb.shape()[0], gdb.shape()[1], 10], None);
+        let sim_grid_arr = Array3::<Option<f32>>::from_elem(gdb.shape(), None);
         let mut sim_db = InCompleteGriddedDataBase::new(
             sim_grid_arr,
             gdb.grid_spacing().clone(),
@@ -314,7 +313,7 @@ mod test {
         let vgram_coordinate_system = CoordinateSystem::new(vgram_origin.into(), vgram_rot);
         let range = Vector3::new(150.0, 50.0, 10.0);
         let sill = 1.0;
-        let nugget = 0.0;
+        let nugget = 0.2;
 
         let spherical_vgram =
             SphericalVariogram::new(range, sill, nugget, vgram_coordinate_system.clone());
@@ -333,7 +332,7 @@ mod test {
             GSGSParameters {
                 max_octant_cond_data: 40,
                 max_octant_sim_data: 40,
-                group_size: [10, 10, 10],
+                group_size: [4, 4, 1],
             },
         );
 

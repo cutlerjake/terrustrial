@@ -13,8 +13,8 @@ incremental = true
 [dependencies]
 approx = "0.5.1"
 faer = "0.7.0"
-faer-core = "0.9.1"
-faer-cholesky = "0.9.1"
+faer-core = "0.10.0"
+faer-cholesky = "0.10.0"
 nalgebra = { version = "0.32.3", features = ["std"] }
 ndarray = "0.15.6"
 num-traits = "0.2.15"

@@ -44,6 +44,7 @@ impl SimpleKrigingSystem {
     /// * `n_elems` - The maximum number of elements in the system
     /// # Returns
     /// * `Self` - The new simple kriging system
+    /// * Requires zero mean data
     pub fn new(n_elems: usize) -> Self {
         let cholesky_compute_mem = GlobalMemBuffer::new(
             faer_cholesky::llt::compute::cholesky_in_place_req::<f32>(
@@ -611,15 +612,15 @@ mod tests {
             UnitQuaternion::from_euler_angles(0.0.to_radians(), 0.0.to_radians(), 0.0.to_radians());
         let vgram_origin = Point3::new(0.0, 0.0, 0.0);
         let vgram_coordinate_system = CoordinateSystem::new(vgram_origin.into(), vgram_rot);
-        let range = Vector3::new(150.0, 50.0, 1.0);
+        let range = Vector3::new(150.0, 50.0, 10.0);
         let sill = 1.0;
-        let nugget = 0.0;
+        let nugget = 0.2;
 
         let spherical_vgram =
             SphericalVariogram::new(range, sill, nugget, vgram_coordinate_system.clone());
 
         // create search ellipsoid
-        let search_ellipsoid = Ellipsoid::new(450.0, 150.0, 1.0, vgram_coordinate_system.clone());
+        let search_ellipsoid = Ellipsoid::new(450.0, 150.0, 10.0, vgram_coordinate_system.clone());
 
         // create a query engine for the conditioning data
         let query_engine = GriddedDataBaseOctantQueryEngine::new(search_ellipsoid, &gdb, 16);
