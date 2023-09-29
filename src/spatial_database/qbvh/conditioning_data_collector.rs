@@ -135,9 +135,14 @@ impl<'a> ConditioningDataCollector<'a> {
     }
 
     #[inline(always)]
-    pub fn update_max_dist(&mut self, octant: usize) {
+    pub fn update_max_dist(&mut self) {
         if self.all_octants_full() {
-            self.max_accepted_dist = self.octant_max_distances[octant].max(self.max_accepted_dist);
+            self.max_accepted_dist = *self
+                .octant_distances
+                .iter()
+                .flatten()
+                .max_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap();
         }
     }
 
@@ -175,7 +180,7 @@ impl<'a> ConditioningDataCollector<'a> {
                 self.update_max_accepted_octant_dist(octant as usize);
 
                 //update max accepted dist
-                self.update_max_dist(octant as usize);
+                self.update_max_dist();
 
                 return InsertionResult::InsertedFull;
             }
@@ -196,7 +201,7 @@ impl<'a> ConditioningDataCollector<'a> {
             self.update_max_accepted_octant_dist(octant as usize);
 
             //update max accepted dist
-            self.update_max_dist(octant as usize);
+            self.update_max_dist();
 
             return InsertionResult::InsertedFull;
         }
