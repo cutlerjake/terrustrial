@@ -1,9 +1,9 @@
 use nalgebra::Point3;
 use nalgebra::{Isometry3, UnitQuaternion, Vector3};
 use parry3d::bounding_volume::Aabb;
-use simba::simd::f32x16;
-use simba::simd::SimdPartialOrd;
 use simba::simd::SimdValue;
+use simba::simd::{f32x16, AutoF32x4};
+use simba::simd::{f32x4, SimdPartialOrd};
 
 use crate::{
     kriging::KrigingParameters, spatial_database::coordinate_system::octant,
@@ -79,6 +79,30 @@ impl Ellipsoid {
         iso_h.simd_le(f32x16::splat(1.0))
     }
 
+    #[inline(always)]
+    pub fn wide_contains(&self, points: &Point3<f32x4>) -> <f32x4 as SimdValue>::SimdBool {
+        let rot = *self.coordinate_system.world_to_local.rotation.quaternion();
+        let trans = self.coordinate_system.world_to_local.translation;
+
+        let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<f32x4>().into());
+        let simd_trans = trans.vector.cast::<f32x4>().into();
+
+        let simd_world_to_local = Isometry3::from_parts(simd_trans, simd_rot);
+
+        let mut points = simd_world_to_local.transform_point(points);
+
+        let normalizer = Vector3::new(
+            f32x4::splat(self.a),
+            f32x4::splat(self.b),
+            f32x4::splat(self.c),
+        );
+        points.coords.component_div_assign(&normalizer);
+
+        let iso_h = points.coords.norm();
+
+        iso_h.simd_le(f32x4::splat(1.0))
+    }
+
     /// Copmute the isomitrized distance of a point in world coordinate, to the center of the ellipsoid
     pub fn iso_distance(&self, point: &Point3<f32>) -> f32 {
         let point = self.coordinate_system.world_to_local.transform_point(point);
@@ -101,8 +125,8 @@ impl Ellipsoid {
         points.iter().enumerate().for_each(|(i, p)| {
             let point = self.coordinate_system.world_to_local.transform_point(p);
             let octant = octant(&point);
-            octant_points[octant as usize - 1].push(*p);
-            octant_flag[octant as usize - 1].push(i);
+            octant_points[octant as usize].push(*p);
+            octant_flag[octant as usize].push(i);
         });
 
         //sort each octant by distance to origin

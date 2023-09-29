@@ -49,7 +49,7 @@ where
                 .world_to_local
                 .transform_point(&p);
             let octant = octant(&p);
-            octants[octant as usize - 1].push(offset);
+            octants[octant as usize].push(offset);
         }
 
         //sort offsets by iso_distance to ref point

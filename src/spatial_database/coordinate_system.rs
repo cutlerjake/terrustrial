@@ -106,14 +106,14 @@ impl CoordinateSystem {
 /// Octant of a point
 pub fn octant(point: &Point3<f32>) -> u8 {
     match (point.x >= 0.0, point.y >= 0.0, point.z >= 0.0) {
-        (true, true, true) => 1,
-        (false, true, true) => 2,
-        (false, false, true) => 3,
-        (true, false, true) => 4,
-        (true, true, false) => 5,
-        (false, true, false) => 6,
-        (false, false, false) => 7,
-        (true, false, false) => 8,
+        (true, true, true) => 0,
+        (false, true, true) => 1,
+        (false, false, true) => 2,
+        (true, false, true) => 3,
+        (true, true, false) => 4,
+        (false, true, false) => 5,
+        (false, false, false) => 6,
+        (true, false, false) => 7,
     }
 }
 

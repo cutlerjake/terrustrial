@@ -8,6 +8,7 @@ use self::gridded_databases::GriddedDataBaseInterface;
 pub mod coordinate_system;
 pub mod gridded_databases;
 pub mod normalized;
+pub mod qbvh;
 
 pub trait SpatialDataBase<T> {
     type INDEX: Debug;
