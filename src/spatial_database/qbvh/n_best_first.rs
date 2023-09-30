@@ -7,7 +7,6 @@ use parry3d::{
     partitioning::{NodeIndex, Qbvh, SimdBestFirstVisitStatus},
 };
 
-use crate::spatial_database::qbvh::simd_n_best_first_visitor;
 use crate::spatial_database::qbvh::weighted_value::WeightedValue;
 use nalgebra::RealField;
 

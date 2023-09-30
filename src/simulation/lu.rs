@@ -341,6 +341,31 @@ impl MiniLUSystem {
         vals
     }
 
+    // #[inline(always)]
+    // pub fn ok_values(&self) -> Vec<f32> {
+    //     //populate sk estimates
+    //     let mut sim_mat = Mat::zeros(self.n_sim, 1);
+    //     mul::matvec::matvec_with_conj(
+    //         sim_mat.as_mut(),
+    //         self.intermediate_mat.as_ref(),
+    //         Conj::No,
+    //         self.w_vec.as_ref().submatrix(0, 0, self.n_cond, 1),
+    //         Conj::No,
+    //         None,
+    //         1.0,
+    //     );
+
+    //     let ident =
+    //         Mat::<f32>::identity(self.intermediate_mat.nrows(), self.intermediate_mat.ncols());
+
+    //     let mut vals = Vec::with_capacity(self.n_sim);
+    //     for i in 0..sim_mat.nrows() {
+    //         vals.push(sim_mat.read(i, 0));
+    //     }
+
+    //     vals
+    // }
+
     #[inline(always)]
     pub fn simulate(&self) -> Vec<f32> {
         let mut sim_mat = Mat::zeros(self.n_sim, 1);

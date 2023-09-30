@@ -8,9 +8,6 @@ use simba::simd::f32x16;
 use simba::simd::SimdPartialOrd;
 use simba::simd::SimdValue;
 
-// use std::simd::f32x16;
-// use std::simd::SimdPartialOrd;
-
 pub struct SphericalVariogram {
     range: Vector3<f32>,
     sill: f32,
@@ -39,19 +36,13 @@ impl SphericalVariogram {
     #[inline(always)]
     pub fn variogram(&self, h: Vector3<f32>) -> f32 {
         let mut h = self.rotation.transform_vector(&h);
-        // let h = self.coordinate_system.global_to_local(&h.into());
-        // let iso_h = f32::sqrt(
-        //     (h.x / self.range.x).powi(2)
-        //         + (h.y / self.range.y).powi(2)
-        //         + (h.z / self.range.z).powi(2),
-        // );
 
         h.component_div_assign(&self.range);
         let iso_h = h.norm();
 
         if iso_h == 0f32 {
-            //0f32
-            self.nugget
+            0f32
+            //self.nugget
         } else if iso_h <= 1f32 {
             self.nugget + (self.sill - self.nugget) * (1.5 * iso_h - 0.5 * iso_h.powi(3))
         } else {
@@ -87,19 +78,11 @@ impl SphericalVariogram {
             + (simd_sill - simd_nugget) * (simd_1_5 * iso_h - simd_0_5 * iso_h * iso_h * iso_h);
 
         //set lanes of simd variance to nugget where lanes of iso_h == 0.0
-        simd_v = simd_v.select(mask, f32x16::splat(self.nugget));
+        simd_v = simd_v.select(mask, f32x16::splat(0.0));
 
         let mask = iso_h.simd_le(f32x16::splat(1.0));
 
         simd_v.select(mask, simd_sill)
-
-        // if iso_h == 0f32 {
-        //     0f32
-        // } else if iso_h <= 1f32 {
-        //     self.nugget + (self.sill - self.nugget) * (1.5 * iso_h - 0.5 * iso_h.powi(3))
-        // } else {
-        //     self.sill
-        // }
     }
 
     #[inline(always)]
@@ -131,5 +114,38 @@ impl VariogramModel for SphericalVariogram {
     #[inline(always)]
     fn vectorized_covariogram(&self, h: Vector3<f32x16>) -> f32x16 {
         self.vectorized_covariogram(h)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use nalgebra::Translation3;
+
+    use super::*;
+    #[test]
+    fn spherical_vgram_var() {
+        let sill = 1.0;
+        let nugget = 0.1;
+        let range = 300.0;
+        let cs =
+            CoordinateSystem::new(Translation3::new(0.0, 0.0, 0.0), UnitQuaternion::identity());
+        let vgram = SphericalVariogram::new(Vector3::new(range, range, range), sill, nugget, cs);
+
+        let dists = vec![
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(46.1, 0.0, 0.0),
+            Vector3::new(72.8, 0.0, 0.0),
+            Vector3::new(68.01, 0.0, 0.0),
+        ];
+
+        println!("Variance");
+        for d in dists.iter() {
+            println!("dist: {} v: {}", d.norm(), vgram.variogram(*d));
+        }
+
+        println!("Covariance");
+        for d in dists.iter() {
+            println!("dist: {} v: {}", d.norm(), vgram.covariogram(*d));
+        }
     }
 }

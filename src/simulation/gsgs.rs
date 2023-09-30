@@ -265,7 +265,7 @@ mod test {
         // origing at x = 0, y = 0, z = 0
         // azimuth = 0, dip = 0, plunge = 0
         let coordinate_system = CoordinateSystem::new(
-            Point3::new(0.5, 0.5, 0.5).into(),
+            Point3::new(0.1, 0.1, 0.1).into(),
             UnitQuaternion::from_euler_angles(0.0.to_radians(), 0.0.to_radians(), 0.0.to_radians()),
         );
 
@@ -332,7 +332,7 @@ mod test {
             GSGSParameters {
                 max_octant_cond_data: 40,
                 max_octant_sim_data: 40,
-                group_size: [4, 4, 1],
+                group_size: [10, 10, 1],
             },
         );
 

@@ -2,14 +2,14 @@ use nalgebra::Point3;
 use parry3d::bounding_volume::Aabb;
 use parry3d::partitioning::Qbvh;
 
-pub struct PointSet {
+pub struct PointSet<T> {
     pub points: Vec<Point3<f32>>,
-    pub data: Vec<f32>,
+    pub data: Vec<T>,
     pub tree: Qbvh<u32>,
 }
 
-impl PointSet {
-    pub fn new(points: Vec<Point3<f32>>, data: Vec<f32>) -> Self {
+impl<T> PointSet<T> {
+    pub fn new(points: Vec<Point3<f32>>, data: Vec<T>) -> Self {
         let mut tree = Qbvh::new();
 
         tree.clear_and_rebuild(

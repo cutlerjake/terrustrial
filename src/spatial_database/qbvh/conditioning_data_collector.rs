@@ -1,10 +1,17 @@
 use crate::{
-    geometry::ellipsoid::{self, Ellipsoid},
+    geometry::ellipsoid::Ellipsoid,
     spatial_database::{coordinate_system::octant, qbvh::point_set::PointSet},
 };
 
-use nalgebra::{Point, Point3, SimdValue};
-use parry3d::simba::simd::AutoSimd;
+use nalgebra::{distance, Point3, SimdBool as _, SimdPartialOrd, SimdValue};
+use parry3d::{
+    bounding_volume::SimdAabb,
+    math::{SimdBool, SimdReal, SIMD_WIDTH},
+    partitioning::SimdBestFirstVisitStatus,
+    simba::simd::AutoSimd,
+};
+
+use super::simd_n_best_first_visitor::SimdNBestFirstVisitor;
 
 pub enum InsertionResult {
     InsertedNotFull,
@@ -14,16 +21,13 @@ pub enum InsertionResult {
 }
 
 /// A visitor the computes the conditioning data for a simulation point
-/// the closest n_cond points are retained
-pub struct ConditioningDataCollector<'a> {
+/// the closest n_cond points are retained in each octant
+pub struct ConditioningDataCollector<'a, T> {
     pub n_cond: usize,
     pub point: Point3<f32>,
     pub simd_point: Point3<AutoSimd<[f32; 4]>>,
-    // pub closest_points: Vec<Point3<f32>>,
-    // pub distances: Vec<f32>,
-    pub point_set: &'a PointSet,
+    pub point_set: &'a PointSet<T>,
     pub max_accepted_dist: f32,
-    // pub max_ind: usize,
     pub ellipsoid: Ellipsoid,
     pub octant_points: Vec<Vec<Point3<f32>>>,
     pub octant_distances: Vec<Vec<f32>>,
@@ -32,13 +36,13 @@ pub struct ConditioningDataCollector<'a> {
     pub full_octants: u8,
 }
 
-impl<'a> ConditioningDataCollector<'a> {
+impl<'a, T> ConditioningDataCollector<'a, T> {
     pub fn new(
         point: Point3<f32>,
         ellipsoid: Ellipsoid,
         n_cond: usize,
-        point_set: &'a PointSet,
-    ) -> ConditioningDataCollector {
+        point_set: &'a PointSet<T>,
+    ) -> Self {
         let simd_point: Point3<AutoSimd<[f32; 4]>> = Point3::new(
             AutoSimd::splat(point.coords.x),
             AutoSimd::splat(point.coords.y),
@@ -49,10 +53,7 @@ impl<'a> ConditioningDataCollector<'a> {
             simd_point,
             n_cond,
             point_set,
-            // closest_points: Vec::new(),
-            // distances: Vec::new(),
             max_accepted_dist: f32::MAX,
-            // max_ind: 0,
             ellipsoid,
             octant_points: vec![Vec::new(); 8],
             octant_distances: vec![Vec::new(); 8],
@@ -61,17 +62,6 @@ impl<'a> ConditioningDataCollector<'a> {
             full_octants: 0,
         }
     }
-
-    // #[inline(always)]
-    // fn update_max_ind(&mut self) {
-    //     self.max_ind = self
-    //         .distances
-    //         .iter()
-    //         .enumerate()
-    //         .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-    //         .unwrap()
-    //         .0;
-    // }
 
     #[inline(always)]
     fn update_max_octant_ind(&mut self, octant: usize) {
@@ -83,51 +73,11 @@ impl<'a> ConditioningDataCollector<'a> {
             .0;
     }
 
-    // #[inline(always)]
-    // fn update_max_accepted_dist(&mut self) {
-    //     self.max_accepted_dist = self.distances[self.max_ind];
-    // }
-
     #[inline(always)]
     fn update_max_accepted_octant_dist(&mut self, octant: usize) {
         self.octant_max_distances[octant] =
             self.octant_distances[octant][self.octant_max_inds[octant]];
     }
-
-    // #[inline(always)]
-    // pub fn insert_point(&mut self, point: Point3<f32>, dist: f32) -> InsertionResult {
-    //     //if we have less than n_cond points, insert point
-    //     if self.closest_points.len() < self.n_cond {
-    //         //insert
-    //         self.closest_points.push(point);
-    //         self.distances.push(dist);
-
-    //         if self.closest_points.len() == self.n_cond {
-    //             //update max ind
-    //             self.update_max_ind();
-    //             //update max accepted dist
-    //             self.update_max_accepted_dist();
-
-    //             return InsertionResult::InsertedFull;
-    //         }
-    //         return InsertionResult::InsertedNotFull;
-    //     }
-
-    //     //else if point is closer than furthest point, insert point and remove furthest point
-    //     if dist < self.max_accepted_dist {
-    //         //insert point
-    //         self.closest_points[self.max_ind] = point;
-    //         self.distances[self.max_ind] = dist;
-
-    //         //update max ind
-    //         self.update_max_ind();
-    //         //update max accepted dist
-    //         self.update_max_accepted_dist();
-
-    //         return InsertionResult::InsertedFull;
-    //     }
-    //     return InsertionResult::NotInserted;
-    // }
 
     #[inline(always)]
     pub fn all_octants_full(&self) -> bool {
@@ -155,21 +105,24 @@ impl<'a> ConditioningDataCollector<'a> {
         }
         //check if point in ellipsoid
         if !self.ellipsoid.contains(&point) {
-            //
             return InsertionResult::NotInserted;
         }
 
-        //determine octant
+        //determine octant of point in ellispoid coordinate system
         let local_point = self.ellipsoid.coordinate_system.global_to_local(&point);
         let octant = octant(&local_point);
 
+        //get octant points and distances
         let points = &mut self.octant_points[octant as usize];
         let distances = &mut self.octant_distances[octant as usize];
 
+        //if octant is not full, insert point and return
         if points.len() < self.n_cond {
             //insert
             points.push(point);
             distances.push(dist);
+
+            //if octant is now full update max octant dists and max dist needs updating
 
             if points.len() == self.n_cond {
                 //update full octant count
@@ -182,8 +135,10 @@ impl<'a> ConditioningDataCollector<'a> {
                 //update max accepted dist
                 self.update_max_dist();
 
+                //octant now full
                 return InsertionResult::InsertedFull;
             }
+            //octant not full
             return InsertionResult::InsertedNotFull;
         }
 
@@ -192,8 +147,6 @@ impl<'a> ConditioningDataCollector<'a> {
             //insert point
             self.octant_points[octant as usize][self.octant_max_inds[octant as usize]] = point;
             self.octant_distances[octant as usize][self.octant_max_inds[octant as usize]] = dist;
-            // self.closest_points[self.max_ind] = point;
-            // self.distances[self.max_ind] = dist;
 
             //update max ind
             self.update_max_octant_ind(octant as usize);
@@ -207,6 +160,73 @@ impl<'a> ConditioningDataCollector<'a> {
         }
 
         InsertionResult::NotInserted
+    }
+}
+
+impl<'a, LeafData, T> SimdNBestFirstVisitor<LeafData, SimdAabb>
+    for ConditioningDataCollector<'a, T>
+{
+    type Result = ();
+
+    fn visit(
+        &mut self,
+        threshold: &mut f32,
+        bv: &SimdAabb,
+        data: Option<[Option<&u32>; SIMD_WIDTH]>,
+    ) -> SimdBestFirstVisitStatus<Self::Result> {
+        //mask to select only element with dist less than current furthest point
+        let dists = bv.distance_to_local_point(&Point3::splat(self.point));
+        let mask = dists.simd_lt(SimdReal::splat(*threshold));
+
+        if let Some(data) = data {
+            let bitmask = mask.bitmask();
+            let mut weights = [0.0; SIMD_WIDTH];
+            let mut mask = [false; SIMD_WIDTH];
+            //let mut results = [None; SIMD_WIDTH];
+
+            for ii in 0..SIMD_WIDTH {
+                if (bitmask & (1 << ii)) != 0 && data[ii].is_some() {
+                    // get point index
+                    let part_id = *data[ii].unwrap();
+                    // get point
+                    let point = self.point_set.points[part_id as usize];
+                    // get distance from query point to point
+                    let dist = distance(&point, &self.point);
+
+                    //insert point if distance is less than current furthest point
+                    match self.insert_octant_point(point, dist) {
+                        InsertionResult::InsertedNotFull => {
+                            //If inserted dist <= threshold
+                            mask[ii] = true;
+                        }
+                        InsertionResult::InsertedFull => {
+                            //Conditioning set full -> must updarte threshold
+                            *threshold = self.max_accepted_dist;
+                            //If inserted dist <= threshold
+                            mask[ii] = true;
+                        }
+                        InsertionResult::NotInserted => {}
+                        InsertionResult::NotInsertedOutOfRange => {
+                            return SimdBestFirstVisitStatus::ExitEarly(None);
+                        }
+                    }
+
+                    weights[ii] = dist;
+                }
+            }
+
+            SimdBestFirstVisitStatus::MaybeContinue {
+                weights: SimdReal::from(weights),
+                mask: SimdBool::from(mask),
+                results: [None; SIMD_WIDTH],
+            }
+        } else {
+            SimdBestFirstVisitStatus::MaybeContinue {
+                weights: dists,
+                mask: mask,
+                results: [None; SIMD_WIDTH],
+            }
+        }
     }
 }
 
@@ -421,7 +441,6 @@ mod tests {
 
         println!("Building point set");
         let point_set = PointSet::new(points.clone(), data);
-        let query_point = Point3::new(500.0, 500.0, 500.0);
         let n_cond = 20;
         let mut rng = rand::thread_rng();
         println!("Starting speed test");
