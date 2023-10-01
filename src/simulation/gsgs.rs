@@ -202,7 +202,7 @@ where
                     //     })
                     //     .collect_vec();
 
-                    let mini_system = local_system.create_mini_system(
+                    let mini_system = local_system.create_mini_sk_system(
                         &cond_points,
                         &sim_points,
                         &self.variogram_model,

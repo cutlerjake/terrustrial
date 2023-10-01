@@ -9,10 +9,14 @@ use faer_cholesky::llt::{
     solve::{solve_transpose_req, solve_transpose_with_conj},
     CholeskyError,
 };
-use faer_core::solve::solve_upper_triangular_in_place;
+
 use faer_core::{
     mul::{self, triangular::BlockStructure},
-    Conj, Mat, Parallelism,
+    zipped, Conj, Mat, Parallelism,
+};
+use faer_core::{
+    solve::{solve_lower_triangular_in_place, solve_upper_triangular_in_place},
+    Scale,
 };
 use itertools::Itertools;
 use nalgebra::{Point3, Vector3};
@@ -259,12 +263,12 @@ impl LUSystem {
     }
 
     #[inline(always)]
-    pub fn create_mini_system<V>(
+    pub fn create_mini_sk_system<V>(
         &mut self,
         cond_points: &[Point3<f32>],
         sim_points: &[Point3<f32>],
         vgram: &V,
-    ) -> MiniLUSystem
+    ) -> MiniLUSKSystem
     where
         V: VariogramModel,
     {
@@ -284,11 +288,183 @@ impl LUSystem {
         let intermediate = self.intermediate_mat.clone();
         let w = self.w_vec.clone();
 
-        MiniLUSystem {
+        MiniLUSKSystem {
             n_sim,
             n_cond,
             l_gg,
             intermediate_mat: intermediate,
+            w_vec: w,
+        }
+    }
+
+    #[inline(always)]
+    pub fn create_mini_ok_system<V>(
+        &mut self,
+        cond_points: &[Point3<f32>],
+        cond_values: &[f32],
+        sim_points: &[Point3<f32>],
+        vgram: &V,
+    ) -> MiniLUOKSystem
+    where
+        V: VariogramModel,
+    {
+        let n_cond = cond_points.len();
+        let n_sim = sim_points.len();
+
+        self.set_dims(n_cond, n_sim);
+        self.vectorized_build_l_matrix(cond_points, sim_points, vgram);
+        self.compute_intermediate_mat();
+
+        println!("intermediate: {:?}", self.intermediate_mat);
+
+        let ones = Mat::<f32>::from_fn(n_cond, 1, |_, _| 1.0);
+        let i = Mat::<f32>::identity(self.intermediate_mat.nrows(), self.intermediate_mat.ncols());
+
+        // //(I - L_gd @ L_dd^-1)
+        // let a = i - &self.intermediate_mat;
+
+        // //e^T @(L_11^-1)^T
+        // let mut b = ones.clone();
+
+        // solve_lower_triangular_in_place(
+        //     self.l_mat
+        //         .as_ref()
+        //         .submatrix(0, 0, self.n_cond, self.n_cond)
+        //         .transpose(),
+        //     b.as_mut(),
+        //     Parallelism::None,
+        // );
+
+        // println!("b: {:?}", b);
+
+        // //L_11^-1 @ z
+        // let mut c = Mat::from_fn(n_cond, 1, |i, _| cond_values[i]);
+
+        // solve_lower_triangular_in_place(
+        //     self.l_mat
+        //         .as_ref()
+        //         .submatrix(0, 0, self.n_cond, self.n_cond),
+        //     c.as_mut(),
+        //     Parallelism::None,
+        // );
+
+        // println!("c: {:?}", c);
+
+        // let mut d = Mat::zeros(1, 1);
+        // mul::matvec::matvec_with_conj(
+        //     d.as_mut(),
+        //     b.as_ref().transpose(),
+        //     Conj::No,
+        //     c.as_ref(),
+        //     Conj::No,
+        //     None,
+        //     1.0,
+        // );
+
+        // println!("d: {:?}", d);
+
+        // let mut e = Mat::zeros(1, 1);
+        // mul::matvec::matvec_with_conj(
+        //     e.as_mut(),
+        //     b.as_ref().transpose(),
+        //     Conj::No,
+        //     b.as_ref(),
+        //     Conj::No,
+        //     None,
+        //     1.0,
+        // );
+
+        // println!("e: {:?}", e);
+
+        // let mut ok = Mat::zeros(n_sim, 1);
+        // mul::matvec::matvec_with_conj(
+        //     ok.as_mut(),
+        //     a.as_ref(),
+        //     Conj::No,
+        //     ones.as_ref(),
+        //     Conj::No,
+        //     None,
+        //     1.0,
+        // );
+
+        // let frac = Scale(d.read(0, 0) / e.read(0, 0));
+
+        // ok *= frac;
+
+        // print!("ok: {:?}", ok);
+
+        // lambda_e - C_dd^-1 @ e
+        let mut lambda_e = ones.clone();
+
+        let mut stack = DynStack::new(&mut self.buffer);
+
+        faer_cholesky::llt::solve::solve_in_place_with_conj(
+            self.l_mat
+                .as_ref()
+                .submatrix(0, 0, self.n_cond, self.n_cond),
+            Conj::No,
+            lambda_e.as_mut(),
+            Parallelism::None,
+            stack.rb_mut(),
+        );
+
+        println!("lambda_e: {:?}", lambda_e);
+        println!("intermediate: {:?}", self.intermediate_mat);
+
+        let mut num = Mat::zeros(1, n_sim);
+        mul::matvec::matvec_with_conj(
+            num.as_mut().transpose(),
+            self.intermediate_mat.as_ref(),
+            Conj::No,
+            ones.as_ref(),
+            Conj::No,
+            None,
+            1.0,
+        );
+
+        print!("num: {:?}", num);
+
+        zipped!(num.as_mut()).for_each(|mut v| v.write(1f32 - v.read()));
+
+        //num = num + Scale(1.0);
+
+        let mut denom = 0.0;
+        zipped!(lambda_e.as_ref()).for_each(|v| denom += v.read());
+
+        // let mut ok = Mat::from_fn(
+        //     self.intermediate_mat.nrows(),
+        //     self.intermediate_mat.ncols(),
+        //     |i, j| self.intermediate_mat.read(i, j) + (1.0 - denom) / denom * lambda_e.read(j, 0),
+        // );
+
+        let temp = Mat::<f32>::from_fn(
+            self.intermediate_mat.nrows(),
+            self.intermediate_mat.ncols(),
+            |i, j| num.read(0, i) / denom * lambda_e.read(j, 0),
+        );
+
+        println!("temp: {:?}", temp);
+
+        println!("ok: {:?}", self.intermediate_mat.clone() + temp);
+
+        //ok += Scale((1f32 - s) / s) * &lambda_e.transpose();
+
+        //println!("ok: {:?}", ok);
+
+        let l_gg = self
+            .l_mat
+            .as_ref()
+            .submatrix(self.n_cond, self.n_cond, self.n_sim, self.n_sim)
+            .to_owned()
+            .clone();
+        let intermediate = self.intermediate_mat.clone();
+        let w = self.w_vec.clone();
+
+        MiniLUOKSystem {
+            n_sim,
+            n_cond,
+            l_gg,
+            ok_weights: intermediate,
             w_vec: w,
         }
     }
@@ -300,7 +476,7 @@ impl Clone for LUSystem {
     }
 }
 
-pub struct MiniLUSystem {
+pub struct MiniLUSKSystem {
     pub n_sim: usize,
     pub n_cond: usize,
     pub l_gg: Mat<f32>,
@@ -308,7 +484,7 @@ pub struct MiniLUSystem {
     pub w_vec: Mat<f32>, // consider not storing w vec on this struct to avoid reallocating memory in hot loop
 }
 
-impl MiniLUSystem {
+impl MiniLUSKSystem {
     #[inline(always)]
     pub fn populate_w_vec(&mut self, values: &[f32], rng: &mut StdRng) {
         //populate w vector
@@ -340,31 +516,6 @@ impl MiniLUSystem {
 
         vals
     }
-
-    // #[inline(always)]
-    // pub fn ok_values(&self) -> Vec<f32> {
-    //     //populate sk estimates
-    //     let mut sim_mat = Mat::zeros(self.n_sim, 1);
-    //     mul::matvec::matvec_with_conj(
-    //         sim_mat.as_mut(),
-    //         self.intermediate_mat.as_ref(),
-    //         Conj::No,
-    //         self.w_vec.as_ref().submatrix(0, 0, self.n_cond, 1),
-    //         Conj::No,
-    //         None,
-    //         1.0,
-    //     );
-
-    //     let ident =
-    //         Mat::<f32>::identity(self.intermediate_mat.nrows(), self.intermediate_mat.ncols());
-
-    //     let mut vals = Vec::with_capacity(self.n_sim);
-    //     for i in 0..sim_mat.nrows() {
-    //         vals.push(sim_mat.read(i, 0));
-    //     }
-
-    //     vals
-    // }
 
     #[inline(always)]
     pub fn simulate(&self) -> Vec<f32> {
@@ -400,8 +551,49 @@ impl MiniLUSystem {
     }
 }
 
+pub struct MiniLUOKSystem {
+    pub n_sim: usize,
+    pub n_cond: usize,
+    pub l_gg: Mat<f32>,
+    pub ok_weights: Mat<f32>,
+    pub w_vec: Mat<f32>, // consider not storing w vec on this struct to avoid reallocating memory in hot loop
+}
+
+impl MiniLUOKSystem {
+    //#[inline(always)]
+    // pub fn ok_values(&self) -> Vec<f32> {
+    //     //y_ok = y_sk + [I-\Lambda_sk] @ e @ (\lambda_e^T @ z)/ (\lambda_e^T @ e)
+    //     //populate sk estimates
+    //     let mut sim_mat = Mat::zeros(self.n_sim, 1);
+    //     mul::matvec::matvec_with_conj(
+    //         sim_mat.as_mut(),
+    //         self.intermediate_mat.as_ref(),
+    //         Conj::No,
+    //         self.w_vec.as_ref().submatrix(0, 0, self.n_cond, 1),
+    //         Conj::No,
+    //         None,
+    //         1.0,
+    //     );
+    //     Mat::<f32>::from_fn(self.intermediate_mat.nrows(), 1, |_, _| {
+    //         1.0
+    //     });
+    //     let a = Mat::<f32>::identity(self.intermediate_mat.nrows(), self.intermediate_mat.ncols())
+    //         - &self.intermediate_mat;
+
+    //     let b = sol
+
+    //     let mut vals = Vec::with_capacity(self.n_sim);
+    //     for i in 0..sim_mat.nrows() {
+    //         vals.push(sim_mat.read(i, 0));
+    //     }
+
+    //     vals
+    // }
+}
+
 #[cfg(test)]
 mod tests {
+
     use nalgebra::UnitQuaternion;
     use num_traits::Float;
     use rand::SeedableRng;
@@ -438,7 +630,7 @@ mod tests {
         println!("{:?}", vals);
 
         let mut rng = StdRng::seed_from_u64(0);
-        let mut mini = lu.create_mini_system(&cond_points, &sim_points, &vgram);
+        let mut mini = lu.create_mini_sk_system(&cond_points, &sim_points, &vgram);
         mini.populate_w_vec(values.as_slice(), &mut rng);
         let vals = mini.simulate();
         println!("{:?}", vals);
@@ -473,7 +665,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0);
 
         let mut rng = StdRng::seed_from_u64(0);
-        let mut mini = lu.create_mini_system(&cond_points, &sim_points, &vgram);
+        let mut mini = lu.create_mini_sk_system(&cond_points, &sim_points, &vgram);
         mini.populate_w_vec(values.as_slice(), &mut rng);
         let mut val = mini.sk_values()[0];
 
@@ -490,5 +682,34 @@ mod tests {
         );
 
         println!("mean: {}", system.estimate());
+    }
+
+    #[test]
+    fn test_lu_ok() {
+        let mut lu = LUSystem::new(2, 3);
+        let cond_points = vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ];
+        let values = vec![0.0, 1.0, 2.0];
+        let sim_points = vec![Point3::new(0.0, 0.0, 1.0), Point3::new(1.0, 1.0, 1.0)];
+        let vgram_rot =
+            UnitQuaternion::from_euler_angles(0.0.to_radians(), 0.0.to_radians(), 0.0.to_radians());
+        let vgram_origin = Point3::new(0.0, 0.0, 0.0);
+        let vgram_coordinate_system = CoordinateSystem::new(vgram_origin.into(), vgram_rot);
+        let range = Vector3::new(2.0, 2.0, 2.0);
+        let sill = 1.0;
+        let nugget = 0.1;
+
+        let vgram = SphericalVariogram::new(range, sill, nugget, vgram_coordinate_system.clone());
+        let mut rng = StdRng::seed_from_u64(0);
+
+        lu.create_mini_ok_system(
+            cond_points.as_slice(),
+            values.as_slice(),
+            sim_points.as_slice(),
+            &vgram,
+        );
     }
 }
