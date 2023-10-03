@@ -1,7 +1,11 @@
 use std::marker::PhantomData;
 
 use crate::{
-    kriging::KrigingParameters, spatial_database::SpatialQueryable,
+    geometry::{ellipsoid::Ellipsoid, Geometry},
+    kriging::KrigingParameters,
+    spatial_database::{
+        qbvh::point_set::ConditioningParams, ConditioningProvider, SpatialQueryable,
+    },
     variography::model_variograms::VariogramModel,
 };
 
@@ -441,21 +445,71 @@ impl KrigingSystem for SimpleKrigingSystem {
     }
 }
 
-pub struct SimpleKriging<S, V, G>
-where
-    S: SpatialQueryable<f32, G>,
-{
+pub struct SimpleKriging<S, V> {
     conditioning_data: S,
     variogram_model: V,
-    kriging_parameters: KrigingParameters,
-    phantom: PhantomData<G>,
+    search_ellipsoid: Ellipsoid,
+    query_params: ConditioningParams,
 }
 
-impl<S, V, G> SimpleKriging<S, V, G>
+// impl<S, V, G> SimpleKriging<S, V, G>
+// where
+//     S: SpatialQueryable<f32, G> + Sync,
+//     V: VariogramModel + Sync,
+//     G: Sync,
+// {
+//     /// Create a new simple kriging estimator with the given parameters
+//     /// # Arguments
+//     /// * `conditioning_data` - The data to condition the kriging system on
+//     /// * `variogram_model` - The variogram model to use
+//     /// * `search_ellipsoid` - The search ellipsoid to use
+//     /// * `kriging_parameters` - The kriging parameters to use
+//     /// # Returns
+//     /// A new simple kriging estimator
+//     pub fn new(
+//         conditioning_data: S,
+//         variogram_model: V,
+//         kriging_parameters: KrigingParameters,
+//     ) -> Self {
+//         Self {
+//             conditioning_data,
+//             variogram_model,
+//             kriging_parameters,
+//             phantom: PhantomData,
+//         }
+//     }
+
+//     /// Perform simple kriging at all kriging points
+//     pub fn krig(&self, kriging_points: &[Point3<f32>]) -> Vec<f32> {
+//         //construct kriging system
+//         let kriging_system = SimpleKrigingSystem::new(self.kriging_parameters.max_octant_data * 8);
+
+//         kriging_points
+//             .par_iter()
+//             .progress()
+//             .map_with(kriging_system.clone(), |local_system, kriging_point| {
+//                 //let mut local_system = kriging_system.clone();
+//                 //get nearest points and values
+//                 let (cond_values, cond_points) = self.conditioning_data.query(kriging_point);
+
+//                 //build kriging system for point
+//                 local_system.build_system(
+//                     &cond_points,
+//                     cond_values.as_slice(),
+//                     kriging_point,
+//                     &self.variogram_model,
+//                 );
+
+//                 local_system.estimate()
+//             })
+//             .collect::<Vec<f32>>()
+//     }
+// }
+
+impl<S, V> SimpleKriging<S, V>
 where
-    S: SpatialQueryable<f32, G> + Sync,
-    V: VariogramModel + Sync,
-    G: Sync,
+    S: ConditioningProvider<Ellipsoid, f32, ConditioningParams> + Sync + std::marker::Send,
+    V: VariogramModel + Sync + std::marker::Send,
 {
     /// Create a new simple kriging estimator with the given parameters
     /// # Arguments
@@ -468,39 +522,51 @@ where
     pub fn new(
         conditioning_data: S,
         variogram_model: V,
-        kriging_parameters: KrigingParameters,
+        search_ellipsoid: Ellipsoid,
+        query_params: ConditioningParams,
     ) -> Self {
         Self {
             conditioning_data,
             variogram_model,
-            kriging_parameters,
-            phantom: PhantomData,
+            search_ellipsoid,
+            query_params,
         }
     }
 
     /// Perform simple kriging at all kriging points
     pub fn krig(&self, kriging_points: &[Point3<f32>]) -> Vec<f32> {
         //construct kriging system
-        let kriging_system = SimpleKrigingSystem::new(self.kriging_parameters.max_octant_data * 8);
+        let kriging_system = SimpleKrigingSystem::new(self.query_params.max_n_cond * 8);
 
         kriging_points
             .par_iter()
             .progress()
-            .map_with(kriging_system.clone(), |local_system, kriging_point| {
-                //let mut local_system = kriging_system.clone();
-                //get nearest points and values
-                let (cond_values, cond_points) = self.conditioning_data.query(kriging_point);
+            .map_with(
+                (kriging_system.clone(), self.search_ellipsoid.clone()),
+                |(local_system, ellipsoid), kriging_point| {
+                    //translate search ellipsoid to kriging point
+                    ellipsoid.translate_to(kriging_point);
+                    //get nearest points and values
+                    let (_, cond_values, cond_points) =
+                        self.conditioning_data
+                            .query(kriging_point, &ellipsoid, &self.query_params);
 
-                //build kriging system for point
-                local_system.build_system(
-                    &cond_points,
-                    cond_values.as_slice(),
-                    kriging_point,
-                    &self.variogram_model,
-                );
+                    // if cond_points.len() > 0 {
+                    //     println!("cond_points: {:?}", cond_points);
+                    //     println!("search ellipsoid: {:?}", ellipsoid);
+                    // }
 
-                local_system.estimate()
-            })
+                    //build kriging system for point
+                    local_system.build_system(
+                        &cond_points,
+                        cond_values.as_slice(),
+                        kriging_point,
+                        &self.variogram_model,
+                    );
+
+                    local_system.estimate()
+                },
+            )
             .collect::<Vec<f32>>()
     }
 }
@@ -524,6 +590,7 @@ mod tests {
                 incomplete_grid::InCompleteGriddedDataBase, GriddedDataBaseInterface,
             },
             normalized::Normalize,
+            qbvh::point_set::PointSet,
             SpatialDataBase,
         },
         variography::model_variograms::spherical::SphericalVariogram,
@@ -578,30 +645,23 @@ mod tests {
         );
 
         // create a gridded database from a csv file (walker lake)
-        let mut gdb = InCompleteGriddedDataBase::from_csv_index(
-            "./data/walker.csv",
-            "X",
-            "Y",
-            "Z",
-            "V",
-            GridSpacing {
-                x: 1.0,
-                y: 1.0,
-                z: 1.0,
-            },
-            coordinate_system,
-        )
-        .expect("Failed to create gdb");
+        let mut gdb = PointSet::from_csv_index("./data/walker.csv", "X", "Y", "Z", "V")
+            .expect("Failed to create gdb");
 
         // normalize the data
         gdb.normalize();
 
         // create a grid to store the simulation values
-        let krig_grid_arr = Array3::<Option<f32>>::from_elem(gdb.shape(), None);
+        let spacing = GridSpacing {
+            x: 0.1,
+            y: 0.1,
+            z: 1.0,
+        };
+        let krig_grid_arr = Array3::<Option<f32>>::from_elem([5000, 5000, 1], None);
         let krig_db = InCompleteGriddedDataBase::new(
             krig_grid_arr,
-            gdb.grid_spacing().clone(),
-            gdb.coordinate_system().clone(),
+            spacing.clone(),
+            coordinate_system.clone(),
         );
 
         // create a spherical variogram
@@ -620,21 +680,17 @@ mod tests {
             SphericalVariogram::new(range, sill, nugget, vgram_coordinate_system.clone());
 
         // create search ellipsoid
-        let search_ellipsoid = Ellipsoid::new(450.0, 150.0, 10.0, vgram_coordinate_system.clone());
+        let search_ellipsoid = Ellipsoid::new(150.0, 50.0, 10.0, vgram_coordinate_system.clone());
 
         // create a query engine for the conditioning data
-        let query_engine = GriddedDataBaseOctantQueryEngine::new(search_ellipsoid, &gdb, 16);
+        //let query_engine = GriddedDataBaseOctantQueryEngine::new(search_ellipsoid, &gdb, 16);
 
         // create a gsgs system
         let gsgs = SimpleKriging::new(
-            query_engine,
+            gdb.clone(),
             spherical_vgram,
-            KrigingParameters {
-                max_cond_data: 40,
-                min_cond_data: 0,
-                min_octant_data: 0,
-                max_octant_data: 8,
-            },
+            search_ellipsoid,
+            ConditioningParams::new(8),
         );
 
         //simulate values on grid
@@ -644,6 +700,14 @@ mod tests {
             .indexed_iter()
             .map(|(ind, _)| krig_db.point_at_ind(&[ind.0, ind.1, ind.2]))
             .collect_vec();
+
+        // let points = (0..400)
+        //     .cartesian_product(0..400)
+        //     .map(|(x, y)| {
+        //         let point = Point3::new(x as f32, y as f32, 0.0);
+        //         point
+        //     })
+        //     .collect_vec();
         let values = gsgs.krig(points.as_slice());
 
         //save values to file for visualization
@@ -657,6 +721,20 @@ mod tests {
         let _ = out.write_all(b"value\n");
 
         for (point, value) in points.iter().zip(values.iter()) {
+            //println!("point: {:?}, value: {}", point, value);
+            let _ = out
+                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+        }
+
+        let mut out = File::create("./test_results/sk_cond_data.txt").unwrap();
+        let _ = out.write_all(b"surfs\n");
+        let _ = out.write_all(b"4\n");
+        let _ = out.write_all(b"x\n");
+        let _ = out.write_all(b"y\n");
+        let _ = out.write_all(b"z\n");
+        let _ = out.write_all(b"value\n");
+
+        for (point, value) in gdb.points.iter().zip(gdb.data.iter()) {
             //println!("point: {:?}, value: {}", point, value);
             let _ = out
                 .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());

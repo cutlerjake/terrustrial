@@ -411,9 +411,12 @@ impl LUSystem {
         println!("lambda_e: {:?}", lambda_e);
         println!("intermediate: {:?}", self.intermediate_mat);
 
-        let mut num = Mat::zeros(1, n_sim);
+        let mut denom = 0.0;
+        zipped!(lambda_e.as_ref()).for_each(|v| denom += v.read());
+
+        let mut frac = Mat::zeros(n_sim, 1);
         mul::matvec::matvec_with_conj(
-            num.as_mut().transpose(),
+            frac.as_mut(),
             self.intermediate_mat.as_ref(),
             Conj::No,
             ones.as_ref(),
@@ -422,14 +425,14 @@ impl LUSystem {
             1.0,
         );
 
-        print!("num: {:?}", num);
+        print!("num: {:?}", frac);
 
-        zipped!(num.as_mut()).for_each(|mut v| v.write(1f32 - v.read()));
+        zipped!(frac.as_mut()).for_each(|mut v| v.write((1f32 - v.read()) / denom));
 
         //num = num + Scale(1.0);
 
-        let mut denom = 0.0;
-        zipped!(lambda_e.as_ref()).for_each(|v| denom += v.read());
+        // let mut denom = 0.0;
+        // zipped!(lambda_e.as_ref()).for_each(|v| denom += v.read());
 
         // let mut ok = Mat::from_fn(
         //     self.intermediate_mat.nrows(),
@@ -437,10 +440,23 @@ impl LUSystem {
         //     |i, j| self.intermediate_mat.read(i, j) + (1.0 - denom) / denom * lambda_e.read(j, 0),
         // );
 
+        let mut ok = self.intermediate_mat.clone();
+
+        mul::matmul(
+            ok.as_mut().transpose(),
+            lambda_e.as_ref(),
+            frac.as_ref().transpose(),
+            Some(1.0),
+            1.0,
+            Parallelism::None,
+        );
+
+        println!("ok: {:?}", ok);
+
         let temp = Mat::<f32>::from_fn(
             self.intermediate_mat.nrows(),
             self.intermediate_mat.ncols(),
-            |i, j| num.read(0, i) / denom * lambda_e.read(j, 0),
+            |i, j| frac.read(i, 0) * lambda_e.read(j, 0),
         );
 
         println!("temp: {:?}", temp);

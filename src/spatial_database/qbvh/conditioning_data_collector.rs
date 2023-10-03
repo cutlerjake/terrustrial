@@ -22,24 +22,25 @@ pub enum InsertionResult {
 
 /// A visitor the computes the conditioning data for a simulation point
 /// the closest n_cond points are retained in each octant
-pub struct ConditioningDataCollector<'a, T> {
+pub struct ConditioningDataCollector<'a, 'b, T> {
     pub n_cond: usize,
     pub point: Point3<f32>,
     pub simd_point: Point3<AutoSimd<[f32; 4]>>,
     pub point_set: &'a PointSet<T>,
     pub max_accepted_dist: f32,
-    pub ellipsoid: Ellipsoid,
+    pub ellipsoid: &'b Ellipsoid,
     pub octant_points: Vec<Vec<Point3<f32>>>,
     pub octant_distances: Vec<Vec<f32>>,
+    pub octant_inds: Vec<Vec<u32>>,
     pub octant_max_inds: Vec<usize>,
     pub octant_max_distances: Vec<f32>,
     pub full_octants: u8,
 }
 
-impl<'a, T> ConditioningDataCollector<'a, T> {
+impl<'a, 'b, T> ConditioningDataCollector<'a, 'b, T> {
     pub fn new(
         point: Point3<f32>,
-        ellipsoid: Ellipsoid,
+        ellipsoid: &'b Ellipsoid,
         n_cond: usize,
         point_set: &'a PointSet<T>,
     ) -> Self {
@@ -57,6 +58,7 @@ impl<'a, T> ConditioningDataCollector<'a, T> {
             ellipsoid,
             octant_points: vec![Vec::new(); 8],
             octant_distances: vec![Vec::new(); 8],
+            octant_inds: vec![Vec::new(); 8],
             octant_max_inds: vec![0; 8],
             octant_max_distances: vec![f32::MAX; 8],
             full_octants: 0,
@@ -97,11 +99,16 @@ impl<'a, T> ConditioningDataCollector<'a, T> {
     }
 
     #[inline(always)]
-    pub fn insert_octant_point(&mut self, point: Point3<f32>, dist: f32) -> InsertionResult {
+    pub fn insert_octant_point(
+        &mut self,
+        point: Point3<f32>,
+        dist: f32,
+        ind: u32,
+    ) -> InsertionResult {
         // if point is further away the primary ellipsoid axis then it cannot be in the ellipsoid
         // and no further points can be in the ellipsoid
         if self.ellipsoid.a < dist {
-            return InsertionResult::NotInsertedOutOfRange;
+            return InsertionResult::NotInserted;
         }
         //check if point in ellipsoid
         if !self.ellipsoid.contains(&point) {
@@ -115,12 +122,14 @@ impl<'a, T> ConditioningDataCollector<'a, T> {
         //get octant points and distances
         let points = &mut self.octant_points[octant as usize];
         let distances = &mut self.octant_distances[octant as usize];
+        let inds = &mut self.octant_inds[octant as usize];
 
         //if octant is not full, insert point and return
         if points.len() < self.n_cond {
             //insert
             points.push(point);
             distances.push(dist);
+            inds.push(ind);
 
             //if octant is now full update max octant dists and max dist needs updating
 
@@ -147,6 +156,7 @@ impl<'a, T> ConditioningDataCollector<'a, T> {
             //insert point
             self.octant_points[octant as usize][self.octant_max_inds[octant as usize]] = point;
             self.octant_distances[octant as usize][self.octant_max_inds[octant as usize]] = dist;
+            self.octant_inds[octant as usize][self.octant_max_inds[octant as usize]] = ind;
 
             //update max ind
             self.update_max_octant_ind(octant as usize);
@@ -163,8 +173,8 @@ impl<'a, T> ConditioningDataCollector<'a, T> {
     }
 }
 
-impl<'a, LeafData, T> SimdNBestFirstVisitor<LeafData, SimdAabb>
-    for ConditioningDataCollector<'a, T>
+impl<'a, 'b, LeafData, T> SimdNBestFirstVisitor<LeafData, SimdAabb>
+    for ConditioningDataCollector<'a, 'b, T>
 {
     type Result = ();
 
@@ -194,7 +204,7 @@ impl<'a, LeafData, T> SimdNBestFirstVisitor<LeafData, SimdAabb>
                     let dist = distance(&point, &self.point);
 
                     //insert point if distance is less than current furthest point
-                    match self.insert_octant_point(point, dist) {
+                    match self.insert_octant_point(point, dist, part_id) {
                         InsertionResult::InsertedNotFull => {
                             //If inserted dist <= threshold
                             mask[ii] = true;
@@ -286,11 +296,11 @@ mod tests {
         let ellipsoid = Ellipsoid::new(200f32, 200f32, 200f32, cs);
 
         let mut cond_points =
-            ConditioningDataCollector::new(query_point, ellipsoid, n_cond, &point_set);
+            ConditioningDataCollector::new(query_point, &ellipsoid, n_cond, &point_set);
 
         for point in points.iter() {
             let dist = distance(&point, &query_point);
-            cond_points.insert_octant_point(*point, dist);
+            cond_points.insert_octant_point(*point, dist, 0);
         }
         let mut true_points = points.clone();
         true_points.sort_by(|a, b| {
@@ -387,10 +397,10 @@ mod tests {
         let quat = nalgebra::UnitQuaternion::identity();
         let cs = CoordinateSystem::new(query_point.coords.into(), quat);
 
-        let ellipsoid = Ellipsoid::new(100f32, 100f32, 100f32, cs);
+        let ellipsoid = Ellipsoid::new(200f32, 200f32, 200f32, cs);
 
         let mut cond_points =
-            ConditioningDataCollector::new(query_point, ellipsoid, n_cond, &point_set);
+            ConditioningDataCollector::new(query_point, &ellipsoid, n_cond, &point_set);
         point_set.tree.traverse_n_best_first(&mut cond_points);
 
         let mut true_points = points.clone();
@@ -400,25 +410,29 @@ mod tests {
             dist_a.partial_cmp(&dist_b).unwrap()
         });
 
-        // cond_points.closest_points.sort_by(|a, b| {
-        //     let dist_a = distance(a, &query_point);
-        //     let dist_b = distance(b, &query_point);
-        //     dist_a.partial_cmp(&dist_b).unwrap()
-        // });
+        println!("cond points: {:?}", cond_points.octant_points);
 
-        // for i in 0..n_cond {
-        //     if true_points[i] != cond_points.closest_points[i] {
-        //         println!("index: {}", i);
-        //         println!("true points: {:?}", true_points[i]);
-        //         println!("walker points: {:?}", cond_points.closest_points[i]);
-        //         println!("true dist: {}", distance(&true_points[i], &query_point));
-        //         println!(
-        //             "walker dist: {}",
-        //             distance(&cond_points.closest_points[i], &query_point)
-        //         );
-        //         panic!();
-        //     }
-        // }
+        let mut c_points = cond_points
+            .octant_points
+            .iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        c_points.sort_by(|a, b| {
+            let dist_a = distance(a, &query_point);
+            let dist_b = distance(b, &query_point);
+            dist_a.partial_cmp(&dist_b).unwrap()
+        });
+
+        for i in 0..n_cond {
+            println!("index: {}", i);
+            println!("true points: {:?}", true_points[i]);
+            println!("walker points: {:?}", c_points[i]);
+            println!("true dist: {}", distance(&true_points[i], &query_point));
+            println!("walker dist: {}", distance(&c_points[i], &query_point));
+            if true_points[i] != *c_points[i] {
+                panic!();
+            }
+        }
 
         // println!("true points: {:?}", true_points[0..n_cond].to_vec());
         // println!("walker points: {:?}", cond_points.closest_points);
@@ -459,7 +473,7 @@ mod tests {
             let ellipsoid = Ellipsoid::new(100f32, 100f32, 100f32, cs);
 
             let mut cond_points =
-                ConditioningDataCollector::new(query_point, ellipsoid, n_cond, &point_set);
+                ConditioningDataCollector::new(query_point, &ellipsoid, n_cond, &point_set);
             black_box(
                 point_set
                     .tree
