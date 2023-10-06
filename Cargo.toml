@@ -10,6 +10,10 @@ lto = "fat"
 incremental = true
 
 
+[features]
+default = ["simba", "simba/wide"]
+nightly = ["simba", "simba/packed_simd"]
+
 [dependencies]
 approx = "0.5.1"
 faer = "0.11.0"
@@ -25,7 +29,7 @@ dyn-stack = "0.9.0"
 # simba = { git = "https://github.com/dimforge/simba.git", branch = "master", features = [
 #     "packed_simd",
 # ] }
-simba = { version = "0.8.1", features = ["packed_simd"] }
+simba = { version = "0.8.1", features = ["packed_simd"], optional = true }
 bitvec = "1.0.1"
 ordered-float = "3.7.0"
 indicatif = { version = "0.17.5", features = ["rayon"] }

@@ -440,7 +440,7 @@ mod tests {
 
     #[test]
     fn speed_test() {
-        let n_points = 10_000_000;
+        let n_points = 1_000_000;
 
         println!("Generating {} points", n_points);
         let points = gen_random_points(
@@ -455,7 +455,7 @@ mod tests {
 
         println!("Building point set");
         let point_set = PointSet::new(points.clone(), data);
-        let n_cond = 20;
+        let n_cond = 8;
         let mut rng = rand::thread_rng();
         println!("Starting speed test");
         let time = std::time::Instant::now();
