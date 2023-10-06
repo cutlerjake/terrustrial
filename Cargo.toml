@@ -12,7 +12,7 @@ incremental = true
 
 [features]
 default = ["simba", "simba/wide"]
-nightly = ["simba", "simba/packed_simd"]
+packed = ["simba", "simba/packed_simd"]
 
 [dependencies]
 approx = "0.5.1"
