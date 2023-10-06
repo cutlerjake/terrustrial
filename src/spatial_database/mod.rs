@@ -56,24 +56,24 @@ macro_rules! impl_spatial_database_for_grid {
     };
 }
 
-impl_spatial_database_for_grid!(
-    (
-        gridded_databases::incomplete_grid::InCompleteGriddedDataBase<f32>,
-        f32
-    ),
-    (
-        gridded_databases::incomplete_grid::InCompleteGriddedDataBase<f64>,
-        f64
-    ),
-    (
-        gridded_databases::complete_grid::CompleteGriddedDataBase<f32>,
-        f32
-    ),
-    (
-        gridded_databases::complete_grid::CompleteGriddedDataBase<f64>,
-        f64
-    )
-);
+// impl_spatial_database_for_grid!(
+//     (
+//         gridded_databases::incomplete_grid::InCompleteGriddedDataBase<f32, f32>,
+//         f32
+//     ),
+//     (
+//         gridded_databases::incomplete_grid::InCompleteGriddedDataBase<f64, f32>,
+//         f64
+//     ),
+//     (
+//         gridded_databases::complete_grid::CompleteGriddedDataBase<f32, f32>,
+//         f32
+//     ),
+//     (
+//         gridded_databases::complete_grid::CompleteGriddedDataBase<f64, f32>,
+//         f64
+//     )
+// );
 
 pub trait SpatialQueryable<T, G> {
     fn query(&self, point: &Point3<f32>) -> (Vec<T>, Vec<Point3<f32>>);

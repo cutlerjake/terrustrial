@@ -4,6 +4,7 @@ use crate::{
 };
 
 use nalgebra::{distance, Point3, SimdBool as _, SimdPartialOrd, SimdValue};
+use num_traits::NumCast;
 use parry3d::{
     bounding_volume::SimdAabb,
     math::{SimdBool, SimdReal, SIMD_WIDTH},
@@ -210,9 +211,9 @@ impl<'a, 'b, LeafData, T> SimdNBestFirstVisitor<LeafData, SimdAabb>
                             mask[ii] = true;
                         }
                         InsertionResult::InsertedFull => {
-                            //Conditioning set full -> must updarte threshold
+                            //Conditioning set full -> must update threshold
                             *threshold = self.max_accepted_dist;
-                            //If inserted dist <= threshold
+                            //If inserted: dist <= threshold
                             mask[ii] = true;
                         }
                         InsertionResult::NotInserted => {}

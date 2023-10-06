@@ -1,4 +1,5 @@
-use nalgebra::Point3;
+use nalgebra::{Point3, SimdRealField, SimdValue};
+use num_traits::Float;
 use parry3d::bounding_volume::Aabb;
 
 use crate::geometry::Geometry;
@@ -12,7 +13,10 @@ pub mod gridded_db;
 pub mod incomplete_grid;
 
 /// Gridded database interface.
-pub trait GriddedDataBaseInterface<T> {
+pub trait GriddedDataBaseInterface<T, CS>
+where
+    CS: SimdValue + SimdRealField + Float,
+{
     fn coord_to_high_ind(&self, point: &Point3<f32>) -> [isize; 3];
     fn offset_ind(&self, ind: [usize; 3], offset: [isize; 3]) -> Option<[usize; 3]>;
     fn data_at_ind(&self, ind: &[usize; 3]) -> Option<T>;
@@ -35,5 +39,5 @@ pub trait GriddedDataBaseInterface<T> {
     fn set_data_at_ind(&mut self, ind: &[usize; 3], data: T);
     fn shape(&self) -> [usize; 3];
     fn grid_spacing(&self) -> GridSpacing;
-    fn coordinate_system(&self) -> CoordinateSystem;
+    fn coordinate_system(&self) -> CoordinateSystem<CS>;
 }

@@ -1,6 +1,7 @@
-use nalgebra::{Isometry, Isometry3, Point3, Translation3, UnitQuaternion};
-
-use simba::simd::f32x16;
+use nalgebra::{
+    Isometry, Isometry3, Point3, SimdRealField, SimdValue, Translation3, UnitQuaternion,
+};
+use num_traits::Float;
 
 //use std::simd::f32x16;
 
@@ -17,21 +18,28 @@ impl GridSpacing {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct CoordinateSystem {
-    pub translation: Translation3<f32>,
-    pub rotation: UnitQuaternion<f32>,
-    pub inverse_rotation: UnitQuaternion<f32>,
-    pub world_to_local: Isometry3<f32>,
-    pub local_to_world: Isometry3<f32>,
+#[derive(Copy, Clone)]
+pub struct CoordinateSystem<T>
+where
+    T: Float,
+{
+    pub translation: Translation3<T>,
+    pub rotation: UnitQuaternion<T>,
+    pub inverse_rotation: UnitQuaternion<T>,
+    pub world_to_local: Isometry3<T>,
+    pub local_to_world: Isometry3<T>,
 }
 
-impl CoordinateSystem {
+impl<T> CoordinateSystem<T>
+where
+    T: Float + SimdValue + SimdRealField,
+    <T as SimdValue>::Element: nalgebra::RealField,
+{
     /// Creates a new coordinate system from a translation and a rotation quaternion
     /// # Arguments
     /// * `translation` - translation component of the coordinate system (origin of coordinate system)
     /// * `quat` - rotation component of the coordinate system
-    pub fn new(translation: Translation3<f32>, quat: UnitQuaternion<f32>) -> Self {
+    pub fn new(translation: Translation3<T>, quat: UnitQuaternion<T>) -> Self {
         let local_to_world = Isometry::from_parts(translation, quat);
         let world_to_local = local_to_world.inverse();
         Self {
@@ -44,19 +52,14 @@ impl CoordinateSystem {
     }
 
     /// Set the origin of the coordinate system
-    pub fn set_origin(&mut self, origin: Point3<f32>) {
+    pub fn set_origin(&mut self, origin: Point3<T>) {
         self.translation = Translation3::new(origin.x, origin.y, origin.z);
         self.local_to_world = Isometry::from_parts(self.translation, self.rotation);
         self.world_to_local = self.local_to_world.inverse();
     }
 
     /// Create a new coordinate system from an origin and euler angles
-    pub fn from_origin_and_euler_angles(
-        origin: Point3<f32>,
-        roll: f32,
-        pitch: f32,
-        yaw: f32,
-    ) -> Self {
+    pub fn from_origin_and_euler_angles(origin: Point3<T>, roll: T, pitch: T, yaw: T) -> Self {
         //create rotation quaternion from euler angles
         let rot_quaternion = UnitQuaternion::from_euler_angles(roll, pitch, yaw);
         //create translation quaternion from origin
@@ -66,41 +69,41 @@ impl CoordinateSystem {
     }
 
     /// Origin of the coordinate system
-    pub fn origin(&self) -> Point3<f32> {
+    pub fn origin(&self) -> Point3<T> {
         Point3::new(self.translation.x, self.translation.y, self.translation.z)
     }
 
     /// Convert a point from global to local coordinates
-    pub fn global_to_local(&self, point: &Point3<f32>) -> Point3<f32> {
+    pub fn global_to_local(&self, point: &Point3<T>) -> Point3<T> {
         self.world_to_local.transform_point(point)
     }
 
     /// Vectorized version of global to local transformation
-    pub fn vectorized_global_to_local_isomety(&self) -> Isometry3<f32x16> {
-        let rot = *self.world_to_local.rotation.quaternion();
-        let trans = self.world_to_local.translation;
+    // pub fn vectorized_global_to_local_isomety(&self) -> Isometry3<f32x16> {
+    //     let rot = *self.world_to_local.rotation.quaternion();
+    //     let trans = self.world_to_local.translation;
 
-        let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<f32x16>().into());
-        let simd_trans = trans.vector.cast::<f32x16>().into();
+    //     let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<f32x16>().into());
+    //     let simd_trans = trans.vector.cast::<f32x16>().into();
 
-        Isometry3::from_parts(simd_trans, simd_rot)
-    }
+    //     Isometry3::from_parts(simd_trans, simd_rot)
+    // }
 
     /// Convert a point from local to global coordinates
-    pub fn local_to_global(&self, point: &Point3<f32>) -> Point3<f32> {
+    pub fn local_to_global(&self, point: &Point3<T>) -> Point3<T> {
         self.local_to_world.transform_point(point)
     }
 
-    /// Vectorized version of local to global transformation
-    pub fn vectorized_local_to_global(&self) -> Isometry3<f32x16> {
-        let rot = *self.local_to_world.rotation.quaternion();
-        let trans = self.local_to_world.translation;
+    // Vectorized version of local to global transformation
+    // pub fn vectorized_local_to_global(&self) -> Isometry3<f32x16> {
+    //     let rot = *self.local_to_world.rotation.quaternion();
+    //     let trans = self.local_to_world.translation;
 
-        let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<f32x16>().into());
-        let simd_trans = trans.vector.cast::<f32x16>().into();
+    //     let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<f32x16>().into());
+    //     let simd_trans = trans.vector.cast::<f32x16>().into();
 
-        Isometry3::from_parts(simd_trans, simd_rot)
-    }
+    //     Isometry3::from_parts(simd_trans, simd_rot)
+    // }
 }
 
 /// Octant of a point

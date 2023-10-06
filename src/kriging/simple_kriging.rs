@@ -13,13 +13,15 @@ use dyn_stack::{DynStack, GlobalMemBuffer, ReborrowMut};
 use faer_cholesky::llt::compute;
 use faer_core::{mul::inner_prod::inner_prod_with_conj, Conj, Mat, MatRef, Parallelism};
 use indicatif::ParallelProgressIterator;
-use nalgebra::{Point3, Vector3};
+use nalgebra::{Point3, SimdRealField, SimdValue, Vector3};
+use num_traits::{Float, NumCast};
 use rayon::prelude::*;
-use simba::simd::f32x16;
+use simba::scalar::RealField;
+use simba::simd::SimdPartialOrd;
 
 use super::KrigingSystem;
 
-pub struct SimpleKrigingSystem {
+pub struct SimpleKrigingSystem<T> {
     pub cond_cov_mat: Mat<f32>,
     pub krig_point_cov_vec: Mat<f32>,
     pub weights: Mat<f32>,
@@ -28,21 +30,50 @@ pub struct SimpleKrigingSystem {
     pub cholesky_compute_mem: GlobalMemBuffer,
     pub cholesky_solve_mem: GlobalMemBuffer,
     pub n_elems: usize,
-    pub cond_x_buffer: [f32; 16],
-    pub cond_y_buffer: [f32; 16],
-    pub cond_z_buffer: [f32; 16],
-    pub cov_buffer: [f32; 16],
-    pub simd_vec_buffer: Vec<Vector3<f32x16>>,
+    pub cond_x_buffer: T,
+    pub cond_y_buffer: T,
+    pub cond_z_buffer: T,
+    pub cov_buffer: T,
+    pub simd_vec_buffer: Vec<Vector3<T>>,
 }
 
-impl Clone for SimpleKrigingSystem {
+impl<T> Clone for SimpleKrigingSystem<T>
+where
+    T: Clone,
+{
     fn clone(&self) -> Self {
         let n_elems = self.n_elems;
-        Self::new(n_elems)
+        Self {
+            cond_cov_mat: self.cond_cov_mat.clone(),
+            krig_point_cov_vec: self.krig_point_cov_vec.clone(),
+            weights: self.weights.clone(),
+            values: self.values.clone(),
+            c_0: self.c_0,
+            cholesky_compute_mem: GlobalMemBuffer::new(
+                faer_cholesky::llt::compute::cholesky_in_place_req::<f32>(
+                    n_elems,
+                    Parallelism::None,
+                    Default::default(),
+                )
+                .unwrap(),
+            ),
+            cholesky_solve_mem: GlobalMemBuffer::new(
+                faer_cholesky::llt::solve::solve_req::<f32>(n_elems, 1, Parallelism::None).unwrap(),
+            ),
+            n_elems,
+            cond_x_buffer: self.cond_x_buffer.clone(),
+            cond_y_buffer: self.cond_y_buffer.clone(),
+            cond_z_buffer: self.cond_z_buffer.clone(),
+            cov_buffer: self.cov_buffer.clone(),
+            simd_vec_buffer: Vec::with_capacity(n_elems * (n_elems + 1) / (2 * 16) + 1),
+        }
     }
 }
 
-impl SimpleKrigingSystem {
+impl<T> SimpleKrigingSystem<T>
+where
+    T: SimdValue<Element = f32> + SimdRealField + Copy,
+{
     /// Create a new simple kriging system
     /// # Arguments
     /// * `n_elems` - The maximum number of elements in the system
@@ -72,10 +103,10 @@ impl SimpleKrigingSystem {
             cholesky_compute_mem,
             cholesky_solve_mem,
             n_elems,
-            cond_x_buffer: [0.0; 16],
-            cond_y_buffer: [0.0; 16],
-            cond_z_buffer: [0.0; 16],
-            cov_buffer: [0.0; 16],
+            cond_x_buffer: T::zero(),
+            cond_y_buffer: T::zero(),
+            cond_z_buffer: T::zero(),
+            cov_buffer: T::zero(),
             simd_vec_buffer: Vec::with_capacity(n_elems * (n_elems + 1) / (2 * 16) + 1),
         }
     }
@@ -85,30 +116,30 @@ impl SimpleKrigingSystem {
     /// * `cond_points` - The conditioning points for the kriging point
     /// * `kriging_point` - The kriging point
     /// * `vgram` - The variogram model
-    pub fn build_covariance_matrix_and_vector<V>(
-        &mut self,
-        cond_points: &[Point3<f32>],
-        kriging_point: &Point3<f32>,
-        vgram: &V,
-    ) where
-        V: VariogramModel,
-    {
-        let n_elems = cond_points.len();
-        unsafe { self.cond_cov_mat.set_dims(n_elems, n_elems) };
-        unsafe { self.krig_point_cov_vec.set_dims(n_elems, 1) };
-        unsafe { self.weights.set_dims(n_elems, 1) };
+    // pub fn build_covariance_matrix_and_vector<V>(
+    //     &mut self,
+    //     cond_points: &[Point3<f32>],
+    //     kriging_point: &Point3<f32>,
+    //     vgram: &V,
+    // ) where
+    //     V: VariogramModel<MAYBE_SIMD = T>,
+    // {
+    //     let n_elems = cond_points.len();
+    //     unsafe { self.cond_cov_mat.set_dims(n_elems, n_elems) };
+    //     unsafe { self.krig_point_cov_vec.set_dims(n_elems, 1) };
+    //     unsafe { self.weights.set_dims(n_elems, 1) };
 
-        for i in 0..cond_points.len() {
-            for j in 0..=i {
-                let h = cond_points[i] - cond_points[j];
-                let cov = vgram.covariogram(h);
-                unsafe { self.cond_cov_mat.write_unchecked(i, j, cov) };
-            }
-            let h = kriging_point - cond_points[i];
-            let cov = vgram.covariogram(h);
-            unsafe { self.krig_point_cov_vec.write_unchecked(i, 0, cov) };
-        }
-    }
+    //     for i in 0..cond_points.len() {
+    //         for j in 0..=i {
+    //             let h = cond_points[i] - cond_points[j];
+    //             let cov = vgram.covariogram(h);
+    //             unsafe { self.cond_cov_mat.write_unchecked(i, j, cov) };
+    //         }
+    //         let h = kriging_point - cond_points[i];
+    //         let cov = vgram.covariogram(h);
+    //         unsafe { self.krig_point_cov_vec.write_unchecked(i, 0, cov) };
+    //     }
+    // }
     /// Set dimensions of the system for the given number of elements
     /// # Arguments
     /// * `n_elems` - The number of elements in the system
@@ -130,7 +161,7 @@ impl SimpleKrigingSystem {
     #[inline(always)]
     pub fn vectorized_build_covariance_matrix<V>(&mut self, cond_points: &[Point3<f32>], vgram: &V)
     where
-        V: VariogramModel,
+        V: VariogramModel<T>,
     {
         unsafe { self.simd_vec_buffer.set_len(0) };
 
@@ -140,44 +171,59 @@ impl SimpleKrigingSystem {
         for (i, p1) in cond_points.iter().enumerate() {
             for p2 in cond_points[0..=i].iter() {
                 let d = p1 - p2;
-                self.cond_x_buffer[cnt] = d.x;
-                self.cond_y_buffer[cnt] = d.y;
-                self.cond_z_buffer[cnt] = d.z;
+                // self.cond_x_buffer[cnt] = d.x;
+                // self.cond_y_buffer[cnt] = d.y;
+                // self.cond_z_buffer[cnt] = d.z;
+
+                self.cond_x_buffer.replace(
+                    cnt, d.x, //<<T as SimdValue>::Element as NumCast>::from(d.x).unwrap(),
+                );
+                self.cond_y_buffer.replace(
+                    cnt, d.y, //<<T as SimdValue>::Element as NumCast>::from(d.y).unwrap(),
+                );
+                self.cond_z_buffer.replace(
+                    cnt, d.z, //<<T as SimdValue>::Element as NumCast>::from(d.z).unwrap(),
+                );
+
                 cnt += 1;
-                if cnt >= 16 {
+                if cnt >= T::lanes() {
                     cnt = 0;
-                    let simd_x = f32x16::from(self.cond_x_buffer);
-                    let simd_y = f32x16::from(self.cond_y_buffer);
-                    let simd_z = f32x16::from(self.cond_z_buffer);
-                    let vec_point = Vector3::<f32x16>::new(simd_x, simd_y, simd_z);
+                    // let simd_x = f32x16::from(self.cond_x_buffer);
+                    // let simd_y = f32x16::from(self.cond_y_buffer);
+                    // let simd_z = f32x16::from(self.cond_z_buffer);
+                    let vec_point =
+                        Vector3::new(self.cond_x_buffer, self.cond_y_buffer, self.cond_z_buffer);
                     self.simd_vec_buffer.push(vec_point);
                 }
             }
         }
 
-        let simd_x = f32x16::from(self.cond_x_buffer);
-        let simd_y = f32x16::from(self.cond_y_buffer);
-        let simd_z = f32x16::from(self.cond_z_buffer);
-        let vec_point = Vector3::<f32x16>::new(simd_x, simd_y, simd_z);
+        // let simd_x = f32x16::from(self.cond_x_buffer);
+        // let simd_y = f32x16::from(self.cond_y_buffer);
+        // let simd_z = f32x16::from(self.cond_z_buffer);
+        let vec_point = Vector3::new(self.cond_x_buffer, self.cond_y_buffer, self.cond_z_buffer);
         self.simd_vec_buffer.push(vec_point);
 
         let mut simd_cov_iter = self
             .simd_vec_buffer
             .iter()
-            .map(|simd_point| vgram.vectorized_covariogram(*simd_point));
+            .map(|simd_point| vgram.covariogram(*simd_point));
 
         let mut pop_cnt = 0;
 
         //populate covariance matrix using lower triangle value
         for i in 0..cond_points.len() {
             for j in 0..=i {
-                if pop_cnt % 16 == 0 {
+                if pop_cnt % T::lanes() == 0 {
                     self.cov_buffer = unsafe { simd_cov_iter.next().unwrap_unchecked().into() };
                 }
 
                 unsafe {
-                    self.cond_cov_mat
-                        .write_unchecked(i, j, self.cov_buffer[pop_cnt % 16]);
+                    self.cond_cov_mat.write_unchecked(
+                        i,
+                        j,
+                        self.cov_buffer.extract(pop_cnt % T::lanes()),
+                    );
                 };
                 pop_cnt += 1;
             }
@@ -196,7 +242,7 @@ impl SimpleKrigingSystem {
         kriging_point: &Point3<f32>,
         vgram: &V,
     ) where
-        V: VariogramModel,
+        V: VariogramModel<T>,
     {
         unsafe { self.simd_vec_buffer.set_len(0) };
 
@@ -205,42 +251,56 @@ impl SimpleKrigingSystem {
         //compute cov between kriging point and all conditioning points
         for p1 in cond_points.iter() {
             let d = p1 - kriging_point;
-            self.cond_x_buffer[cnt] = d.x;
-            self.cond_y_buffer[cnt] = d.y;
-            self.cond_z_buffer[cnt] = d.z;
+            // self.cond_x_buffer[cnt] = d.x;
+            // self.cond_y_buffer[cnt] = d.y;
+            // self.cond_z_buffer[cnt] = d.z;
+
+            self.cond_x_buffer.replace(
+                cnt, d.x, //<<T as SimdValue>::Element as NumCast>::from(d.x).unwrap(),
+            );
+            self.cond_y_buffer.replace(
+                cnt, d.y, //<<T as SimdValue>::Element as NumCast>::from(d.y).unwrap(),
+            );
+            self.cond_z_buffer.replace(
+                cnt, d.z, //<<T as SimdValue>::Element as NumCast>::from(d.z).unwrap(),
+            );
             cnt += 1;
-            if cnt >= 16 {
+            if cnt >= T::lanes() {
                 cnt = 0;
-                let simd_x = f32x16::from(self.cond_x_buffer);
-                let simd_y = f32x16::from(self.cond_y_buffer);
-                let simd_z = f32x16::from(self.cond_z_buffer);
-                let vec_point = Vector3::<f32x16>::new(simd_x, simd_y, simd_z);
+                // let simd_x = f32x16::from(self.cond_x_buffer);
+                // let simd_y = f32x16::from(self.cond_y_buffer);
+                // let simd_z = f32x16::from(self.cond_z_buffer);
+                let vec_point =
+                    Vector3::new(self.cond_x_buffer, self.cond_y_buffer, self.cond_z_buffer);
                 self.simd_vec_buffer.push(vec_point);
             }
         }
 
-        let simd_x = f32x16::from(self.cond_x_buffer);
-        let simd_y = f32x16::from(self.cond_y_buffer);
-        let simd_z = f32x16::from(self.cond_z_buffer);
-        let vec_point = Vector3::<f32x16>::new(simd_x, simd_y, simd_z);
+        // let simd_x = f32x16::from(self.cond_x_buffer);
+        // let simd_y = f32x16::from(self.cond_y_buffer);
+        // let simd_z = f32x16::from(self.cond_z_buffer);
+        let vec_point = Vector3::new(self.cond_x_buffer, self.cond_y_buffer, self.cond_z_buffer);
         self.simd_vec_buffer.push(vec_point);
 
         let mut simd_cov_iter = self
             .simd_vec_buffer
             .iter()
-            .map(|simd_point| vgram.vectorized_covariogram(*simd_point));
+            .map(|simd_point| vgram.covariogram(*simd_point));
 
         let mut pop_cnt = 0;
 
         //populate covariance matrix using lower triangle value
         for i in 0..cond_points.len() {
-            if pop_cnt % 16 == 0 {
+            if pop_cnt % T::lanes() == 0 {
                 self.cov_buffer = unsafe { simd_cov_iter.next().unwrap_unchecked().into() };
             }
 
             unsafe {
-                self.krig_point_cov_vec
-                    .write_unchecked(i, 0, self.cov_buffer[pop_cnt % 16])
+                self.krig_point_cov_vec.write_unchecked(
+                    i,
+                    0,
+                    self.cov_buffer.extract(pop_cnt % T::lanes()),
+                )
             };
             pop_cnt += 1;
         }
@@ -258,7 +318,7 @@ impl SimpleKrigingSystem {
         kriging_point: &Point3<f32>,
         vgram: &V,
     ) where
-        V: VariogramModel,
+        V: VariogramModel<T>,
     {
         self.vectorized_build_covariance_matrix(cond_points, vgram);
         self.vectorized_build_covariance_vector(cond_points, kriging_point, vgram);
@@ -304,7 +364,7 @@ impl SimpleKrigingSystem {
         kriging_point: &Point3<f32>,
         vgram: &V,
     ) where
-        V: VariogramModel,
+        V: VariogramModel<T>,
     {
         //set dimensions
         self.set_dim(cond_points.len());
@@ -359,7 +419,7 @@ impl SimpleKrigingSystem {
         vgram: &V,
     ) -> MiniSKSystem
     where
-        V: VariogramModel,
+        V: VariogramModel<T>,
     {
         //set dimensions
         self.set_dim(cond_points.len());
@@ -413,20 +473,24 @@ impl MiniSKSystem {
     }
 }
 
-impl KrigingSystem for SimpleKrigingSystem {
+impl<V, T> KrigingSystem<V, T> for SimpleKrigingSystem<T>
+where
+    T: SimdValue<Element = f32> + SimdRealField + Clone + Copy,
+    T: SimdPartialOrd + SimdRealField,
+    <T as SimdValue>::Element: SimdRealField + Float,
+    V: VariogramModel<T>,
+{
     fn new(n_elems: usize) -> Self {
         SimpleKrigingSystem::new(n_elems)
     }
 
-    fn build_system<V>(
+    fn build_system(
         &mut self,
         conditioning_points: &[Point3<f32>],
         conditioning_values: &[f32],
         kriging_point: &Point3<f32>,
         variogram_model: &V,
-    ) where
-        V: VariogramModel,
-    {
+    ) {
         SimpleKrigingSystem::build_system(
             self,
             conditioning_points,
@@ -445,11 +509,17 @@ impl KrigingSystem for SimpleKrigingSystem {
     }
 }
 
-pub struct SimpleKriging<S, V> {
+pub struct SimpleKriging<S, V, T>
+where
+    V: VariogramModel<T>,
+    T: SimdPartialOrd + SimdRealField,
+    <T as SimdValue>::Element: SimdRealField + Float,
+{
     conditioning_data: S,
     variogram_model: V,
     search_ellipsoid: Ellipsoid,
     query_params: ConditioningParams,
+    phantom: PhantomData<T>,
 }
 
 // impl<S, V, G> SimpleKriging<S, V, G>
@@ -506,10 +576,12 @@ pub struct SimpleKriging<S, V> {
 //     }
 // }
 
-impl<S, V> SimpleKriging<S, V>
+impl<S, V, T> SimpleKriging<S, V, T>
 where
     S: ConditioningProvider<Ellipsoid, f32, ConditioningParams> + Sync + std::marker::Send,
-    V: VariogramModel + Sync + std::marker::Send,
+    V: VariogramModel<T> + Sync + std::marker::Send,
+    T: SimdPartialOrd + SimdRealField,
+    T: SimdValue<Element = f32> + Copy,
 {
     /// Create a new simple kriging estimator with the given parameters
     /// # Arguments
@@ -530,6 +602,7 @@ where
             variogram_model,
             search_ellipsoid,
             query_params,
+            phantom: PhantomData,
         }
     }
 
@@ -580,18 +653,14 @@ mod tests {
     use nalgebra::{Translation3, UnitQuaternion, Vector3};
     use ndarray::Array3;
     use num_traits::Float;
+    use simba::simd::WideF32x8;
 
     use crate::{
         geometry::ellipsoid::Ellipsoid,
         spatial_database::{
             coordinate_system::{CoordinateSystem, GridSpacing},
-            gridded_databases::{
-                gridded_data_base_query_engine::GriddedDataBaseOctantQueryEngine,
-                incomplete_grid::InCompleteGriddedDataBase, GriddedDataBaseInterface,
-            },
             normalized::Normalize,
             qbvh::point_set::PointSet,
-            SpatialDataBase,
         },
         variography::model_variograms::spherical::SphericalVariogram,
     };
@@ -609,16 +678,9 @@ mod tests {
         ];
         let kriging_point = Point3::new(5f32, 5f32, 0f32);
         let values = vec![3f32, 4f32, 2f32, 4f32, 6f32];
-        let coordinate_system = CoordinateSystem::new(
-            Translation3::new(0.0, 0.0, 0.0),
-            UnitQuaternion::from_euler_angles(0.0, 0.0, 0.0),
-        );
-        let vgram = SphericalVariogram::new(
-            Vector3::new(10f32, 10f32, 10f32),
-            1f32,
-            0.25f32,
-            coordinate_system,
-        );
+
+        let rot = UnitQuaternion::identity();
+        let vgram = SphericalVariogram::new(Vector3::new(10f32, 10f32, 10f32), 1f32, 0.25f32, rot);
         let mut system = SimpleKrigingSystem::new(cond_points.len());
         system.build_system(
             cond_points.as_slice(),
@@ -630,8 +692,8 @@ mod tests {
         let mean = system.estimate();
         let variance = system.variance();
 
-        assert_eq!(mean, 4.5605335);
-        assert_eq!(variance, 0.40551424);
+        assert_eq!(mean, 4.148547);
+        assert_eq!(variance, 0.49257421);
     }
 
     #[test]
@@ -657,30 +719,31 @@ mod tests {
             y: 0.1,
             z: 1.0,
         };
-        let krig_grid_arr = Array3::<Option<f32>>::from_elem([5000, 5000, 1], None);
-        let krig_db = InCompleteGriddedDataBase::new(
-            krig_grid_arr,
-            spacing.clone(),
-            coordinate_system.clone(),
-        );
+        // let krig_grid_arr = Array3::<Option<f32>>::from_elem([5000, 5000, 1], None);
+        // let krig_db = InCompleteGriddedDataBase::new(
+        //     krig_grid_arr,
+        //     spacing.clone(),
+        //     coordinate_system.clone(),
+        // );
 
         // create a spherical variogram
         // azimuth = 0, dip = 0, plunge = 0
         // range_x = 150, range_y = 50, range_z = 1
         // sill = 1, nugget = 0
-        let vgram_rot =
-            UnitQuaternion::from_euler_angles(0.0.to_radians(), 0.0.to_radians(), 0.0.to_radians());
-        let vgram_origin = Point3::new(0.0, 0.0, 0.0);
-        let vgram_coordinate_system = CoordinateSystem::new(vgram_origin.into(), vgram_rot);
-        let range = Vector3::new(150.0, 50.0, 10.0);
-        let sill = 1.0;
-        let nugget = 0.2;
+        let vgram_rot = UnitQuaternion::identity();
+        let cs = CoordinateSystem::new(Default::default(), Default::default());
+        let range = Vector3::new(
+            WideF32x8::splat(150.0),
+            WideF32x8::splat(50.0),
+            WideF32x8::splat(10.0),
+        );
+        let sill = WideF32x8::splat(1.0f32);
+        let nugget = WideF32x8::splat(0.2);
 
-        let spherical_vgram =
-            SphericalVariogram::new(range, sill, nugget, vgram_coordinate_system.clone());
+        let spherical_vgram = SphericalVariogram::new(range, sill, nugget, vgram_rot);
 
         // create search ellipsoid
-        let search_ellipsoid = Ellipsoid::new(150.0, 50.0, 10.0, vgram_coordinate_system.clone());
+        let search_ellipsoid = Ellipsoid::new(150.0, 50.0, 10.0, cs.clone());
 
         // create a query engine for the conditioning data
         //let query_engine = GriddedDataBaseOctantQueryEngine::new(search_ellipsoid, &gdb, 16);
@@ -694,20 +757,20 @@ mod tests {
         );
 
         //simulate values on grid
-        let points = krig_db
-            .raw_grid
-            .grid
-            .indexed_iter()
-            .map(|(ind, _)| krig_db.point_at_ind(&[ind.0, ind.1, ind.2]))
-            .collect_vec();
-
-        // let points = (0..400)
-        //     .cartesian_product(0..400)
-        //     .map(|(x, y)| {
-        //         let point = Point3::new(x as f32, y as f32, 0.0);
-        //         point
-        //     })
+        // let points = krig_db
+        //     .raw_grid
+        //     .grid
+        //     .indexed_iter()
+        //     .map(|(ind, _)| krig_db.point_at_ind(&[ind.0, ind.1, ind.2]))
         //     .collect_vec();
+
+        let points = (0..400)
+            .cartesian_product(0..400)
+            .map(|(x, y)| {
+                let point = Point3::new(x as f32, y as f32, 0.0);
+                point
+            })
+            .collect_vec();
         let values = gsgs.krig(points.as_slice());
 
         //save values to file for visualization

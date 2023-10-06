@@ -1,4 +1,4 @@
-#![feature(portable_simd)]
+// #![feature(portable_simd)]
 pub mod geometry;
 pub mod kriging;
 pub mod simulation;

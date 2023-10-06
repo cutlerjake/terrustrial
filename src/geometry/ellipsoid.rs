@@ -1,9 +1,10 @@
-use nalgebra::Point3;
 use nalgebra::{Isometry3, UnitQuaternion, Vector3};
+use nalgebra::{Point3, SimdRealField};
+use num_traits::{Float, NumCast};
 use parry3d::bounding_volume::Aabb;
+use simba::scalar::{RealField, SubsetOf};
+use simba::simd::SimdPartialOrd;
 use simba::simd::SimdValue;
-use simba::simd::{f32x16, AutoF32x4};
-use simba::simd::{f32x4, SimdPartialOrd};
 
 use crate::{
     kriging::KrigingParameters, spatial_database::coordinate_system::octant,
@@ -12,12 +13,12 @@ use crate::{
 
 use super::Geometry;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Ellipsoid {
     pub a: f32,
     pub b: f32,
     pub c: f32,
-    pub coordinate_system: CoordinateSystem,
+    pub coordinate_system: CoordinateSystem<f32>,
 }
 
 impl Ellipsoid {
@@ -25,7 +26,7 @@ impl Ellipsoid {
     ///  coordinate system defines location and orientation of ellipsoid
     ///      - location is defined by the translation component of the coordinate system
     ///      - orientation is defined by the rotation component of the coordinate system
-    pub fn new(a: f32, b: f32, c: f32, coordinate_system: CoordinateSystem) -> Self {
+    pub fn new(a: f32, b: f32, c: f32, coordinate_system: CoordinateSystem<f32>) -> Self {
         Self {
             a,
             b,
@@ -51,107 +52,111 @@ impl Ellipsoid {
         let y = point.y / self.b;
         let z = point.z / self.c;
 
-        x * x + y * y + z * z <= 1f32
+        (x * x + y * y + z * z) <= 1.0
     }
 
-    /// Vectorized version of contains
-    #[inline(always)]
-    pub fn vectorized_contains(&self, points: &Point3<f32x16>) -> <f32x16 as SimdValue>::SimdBool {
-        let rot = *self.coordinate_system.world_to_local.rotation.quaternion();
-        let trans = self.coordinate_system.world_to_local.translation;
+    // /// Vectorized version of contains
+    // #[inline(always)]
+    // pub fn vectorized_contains<T>(&self, points: &Point3<T>) -> <T as SimdValue>::SimdBool
+    // where
+    //     T: SimdValue + Clone + SimdRealField + Float,
+    // {
+    //     let rot = *self.coordinate_system.world_to_local.rotation.quaternion();
+    //     let trans = self.coordinate_system.world_to_local.translation;
 
-        let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<f32x16>().into());
-        let simd_trans = trans.vector.cast::<f32x16>().into();
+    //     let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<T>().into());
+    //     let simd_trans = trans.vector.cast::<T>().into();
 
-        let simd_world_to_local = Isometry3::from_parts(simd_trans, simd_rot);
+    //     let simd_world_to_local = Isometry3::from_parts(simd_trans, simd_rot);
 
-        let mut points = simd_world_to_local.transform_point(points);
+    //     let mut points = simd_world_to_local.transform_point(points);
 
-        let normalizer = Vector3::new(
-            f32x16::splat(self.a),
-            f32x16::splat(self.b),
-            f32x16::splat(self.c),
-        );
-        points.coords.component_div_assign(&normalizer);
+    //     let normalizer = Vector3::new(self.a, self.b, self.c);
+    //     points.coords.component_div_assign(&normalizer);
 
-        let iso_h = points.coords.norm();
+    //     let iso_h = points.coords.norm();
 
-        iso_h.simd_le(f32x16::splat(1.0))
-    }
+    //     iso_h.simd_le(T::splat(
+    //         <<T as SimdValue>::Element as NumCast>::from(1.0).unwrap(),
+    //     ))
+    // }
 
-    #[inline(always)]
-    pub fn wide_contains(&self, points: &Point3<f32x4>) -> <f32x4 as SimdValue>::SimdBool {
-        let rot = *self.coordinate_system.world_to_local.rotation.quaternion();
-        let trans = self.coordinate_system.world_to_local.translation;
+    // #[inline(always)]
+    // pub fn wide_contains(&self, points: &Point3<f32x4>) -> <f32x4 as SimdValue>::SimdBool {
+    //     let rot = *self.coordinate_system.world_to_local.rotation.quaternion();
+    //     let trans = self.coordinate_system.world_to_local.translation;
 
-        let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<f32x4>().into());
-        let simd_trans = trans.vector.cast::<f32x4>().into();
+    //     let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<f32x4>().into());
+    //     let simd_trans = trans.vector.cast::<f32x4>().into();
 
-        let simd_world_to_local = Isometry3::from_parts(simd_trans, simd_rot);
+    //     let simd_world_to_local = Isometry3::from_parts(simd_trans, simd_rot);
 
-        let mut points = simd_world_to_local.transform_point(points);
+    //     let mut points = simd_world_to_local.transform_point(points);
 
-        let normalizer = Vector3::new(
-            f32x4::splat(self.a),
-            f32x4::splat(self.b),
-            f32x4::splat(self.c),
-        );
-        points.coords.component_div_assign(&normalizer);
+    //     let normalizer = Vector3::new(
+    //         f32x4::splat(self.a),
+    //         f32x4::splat(self.b),
+    //         f32x4::splat(self.c),
+    //     );
+    //     points.coords.component_div_assign(&normalizer);
 
-        let iso_h = points.coords.norm();
+    //     let iso_h = points.coords.norm();
 
-        iso_h.simd_le(f32x4::splat(1.0))
-    }
+    //     iso_h.simd_le(f32x4::splat(1.0))
+    // }
 
-    /// Copmute the isomitrized distance of a point in world coordinate, to the center of the ellipsoid
-    pub fn iso_distance(&self, point: &Point3<f32>) -> f32 {
-        let point = self.coordinate_system.world_to_local.transform_point(point);
+    // /// Copmute the isomitrized distance of a point in world coordinate, to the center of the ellipsoid
+    // pub fn iso_distance<T>(&self, point: &Point3<T>) -> T
+    // where
+    //     T: SimdValue + Clone + SimdRealField + Float,
+    // {
+    //     let point = self.coordinate_system.world_to_local.transform_point(point);
 
-        point.coords.norm()
-    }
+    //     point.coords.norm()
+    // }
 
     // Compute the indices of the points to include in each octant for kriging
     //  NOT USED
-    pub fn octant_points(
-        &self,
-        points: &[Point3<f32>],
-        parameters: &KrigingParameters,
-    ) -> Vec<usize> {
-        let init_size = parameters.min_octant_data;
-        let mut octant_points = vec![Vec::with_capacity(init_size); 8];
-        let mut octant_flag = vec![Vec::with_capacity(points.len()); 8];
+    // pub fn octant_points(
+    //     &self,
+    //     points: &[Point3<f32>],
+    //     parameters: &KrigingParameters,
+    // ) -> Vec<usize> {
+    //     let init_size = parameters.min_octant_data;
+    //     let mut octant_points = vec![Vec::with_capacity(init_size); 8];
+    //     let mut octant_flag = vec![Vec::with_capacity(points.len()); 8];
 
-        //insert all points into respective octant
-        points.iter().enumerate().for_each(|(i, p)| {
-            let point = self.coordinate_system.world_to_local.transform_point(p);
-            let octant = octant(&point);
-            octant_points[octant as usize].push(*p);
-            octant_flag[octant as usize].push(i);
-        });
+    //     //insert all points into respective octant
+    //     points.iter().enumerate().for_each(|(i, p)| {
+    //         let point = self.coordinate_system.world_to_local.transform_point(p);
+    //         let octant = octant(&point);
+    //         octant_points[octant as usize].push(*p);
+    //         octant_flag[octant as usize].push(i);
+    //     });
 
-        //sort each octant by distance to origin
-        octant_flag.iter_mut().for_each(|octant| {
-            octant.sort_by(|a, b| {
-                let a = self
-                    .coordinate_system
-                    .world_to_local
-                    .transform_point(&points[*a])
-                    .coords;
-                let b = self
-                    .coordinate_system
-                    .world_to_local
-                    .transform_point(&points[*b])
-                    .coords;
+    //     //sort each octant by distance to origin
+    //     octant_flag.iter_mut().for_each(|octant| {
+    //         octant.sort_by(|a, b| {
+    //             let a = self
+    //                 .coordinate_system
+    //                 .world_to_local
+    //                 .transform_point(&points[*a])
+    //                 .coords;
+    //             let b = self
+    //                 .coordinate_system
+    //                 .world_to_local
+    //                 .transform_point(&points[*b])
+    //                 .coords;
 
-                a.norm().partial_cmp(&b.norm()).unwrap()
-            });
-        });
+    //             a.norm().partial_cmp(&b.norm()).unwrap()
+    //         });
+    //     });
 
-        octant_flag
-            .iter_mut()
-            .for_each(|octant| octant.truncate(parameters.max_octant_data));
-        octant_flag.into_iter().flatten().collect()
-    }
+    //     octant_flag
+    //         .iter_mut()
+    //         .for_each(|octant| octant.truncate(parameters.max_octant_data));
+    //     octant_flag.into_iter().flatten().collect()
+    // }
 }
 
 impl Geometry for Ellipsoid {
@@ -167,15 +172,48 @@ impl Geometry for Ellipsoid {
         self.coordinate_system.set_origin(*translation);
     }
 
-    fn vectorized_contains(&self, points: &Point3<f32x16>) -> <f32x16 as SimdValue>::SimdBool {
-        self.vectorized_contains(points)
+    fn vectorized_contains<T>(&self, points: &Point3<T>) -> <T as SimdValue>::SimdBool
+    where
+        T: SimdValue<Element = f32> + Clone + SimdRealField,
+    {
+        let rot = *self.coordinate_system.world_to_local.rotation.quaternion();
+        let trans = self.coordinate_system.world_to_local.translation;
+
+        let simd_rot = UnitQuaternion::from_quaternion(rot.coords.map(|x| T::splat(x)).into());
+        let simd_trans = trans.vector.map(|x| T::splat(x)).into();
+
+        let simd_world_to_local = Isometry3::from_parts(simd_trans, simd_rot);
+
+        let mut points = simd_world_to_local.transform_point(points);
+
+        let normalizer = Vector3::new(T::splat(self.a), T::splat(self.b), T::splat(self.c));
+
+        points.coords.component_div_assign(&normalizer);
+
+        let iso_h = points.coords.norm();
+
+        iso_h.simd_le(T::splat(1.0))
     }
 
-    fn iso_distance(&self, point: &Point3<f32>) -> f32 {
-        self.iso_distance(point)
+    #[inline(always)]
+    fn vectorized_iso_distance<T>(&self, point: &Point3<T>) -> T
+    where
+        T: SimdValue<Element = f32> + Clone + SimdRealField,
+    {
+        let rot = *self.coordinate_system.world_to_local.rotation.quaternion();
+        let trans = self.coordinate_system.world_to_local.translation;
+
+        let simd_rot = UnitQuaternion::from_quaternion(rot.coords.map(|x| T::splat(x)).into());
+        let simd_trans = trans.vector.map(|x| T::splat(x)).into();
+
+        let simd_world_to_local = Isometry3::from_parts(simd_trans, simd_rot);
+
+        let point = simd_world_to_local.transform_point(point);
+
+        point.coords.norm()
     }
 
-    fn coordinate_system(&self) -> &CoordinateSystem {
+    fn coordinate_system<V>(&self) -> &CoordinateSystem<f32> {
         &self.coordinate_system
     }
 }
@@ -185,6 +223,7 @@ mod tests {
     use nalgebra::{Translation3, UnitQuaternion};
 
     use approx::assert_relative_eq;
+    use simba::simd::WideF32x4;
 
     use super::*;
     use crate::geometry::ellipsoid::Ellipsoid;
@@ -282,5 +321,39 @@ mod tests {
         let point = Point3::new(0f32, 0f32, 0f32);
 
         assert!(ellipse.contains(&point));
+    }
+
+    #[test]
+    fn test_ellipse_contains_vec_point() {
+        let coordinate_system = CoordinateSystem::new(
+            Translation3::new(0f32, 0f32, 0f32),
+            UnitQuaternion::from_euler_angles(0.0, 0.0, 0.0),
+        );
+
+        let ellipse = Ellipsoid::new(1f32, 2f32, 3f32, coordinate_system);
+
+        let point = Point3::new(
+            WideF32x4::splat(0f32),
+            WideF32x4::splat(0f32),
+            WideF32x4::splat(0f32),
+        );
+
+        assert!(ellipse.vectorized_contains(&point).0.all());
+
+        let point = Point3::new(
+            WideF32x4::splat(1f32),
+            WideF32x4::splat(0f32),
+            WideF32x4::splat(0f32),
+        );
+
+        assert!(ellipse.vectorized_contains(&point).0.all());
+
+        let point = Point3::new(
+            WideF32x4::splat(2f32),
+            WideF32x4::splat(0f32),
+            WideF32x4::splat(0f32),
+        );
+
+        assert!(!ellipse.vectorized_contains(&point).0.all());
     }
 }

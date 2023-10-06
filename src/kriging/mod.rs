@@ -2,22 +2,29 @@ use std::marker::PhantomData;
 
 use indicatif::ParallelProgressIterator;
 use nalgebra::Point3;
+use num_traits::Float;
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
+use simba::scalar::RealField;
+use simba::simd::{SimdPartialOrd, SimdRealField, SimdValue};
 
 use crate::{spatial_database::SpatialQueryable, variography::model_variograms::VariogramModel};
 
 pub mod simple_kriging;
 
-pub trait KrigingSystem: Clone {
+pub trait KrigingSystem<V, T>: Clone
+where
+    V: VariogramModel<T>,
+    T: SimdPartialOrd + SimdRealField,
+    <T as SimdValue>::Element: SimdRealField + Float,
+{
     fn new(n_elems: usize) -> Self;
-    fn build_system<V>(
+    fn build_system(
         &mut self,
         conditioning_points: &[Point3<f32>],
         conditioning_values: &[f32],
         kriging_point: &Point3<f32>,
         variogram_model: &V,
-    ) where
-        V: VariogramModel;
+    );
 
     fn estimate(&self) -> f32;
     fn variance(&self) -> f32;
@@ -30,23 +37,29 @@ pub struct KrigingParameters {
     pub max_octant_data: usize,
 }
 
-pub struct Kriging<S, V, G, KS>
+pub struct Kriging<S, V, G, KS, T>
 where
     S: SpatialQueryable<f32, G>,
-    KS: KrigingSystem + Send,
+    KS: KrigingSystem<V, T> + Send,
+    T: SimdPartialOrd + SimdRealField,
+    <T as SimdValue>::Element: SimdRealField + Float,
+    V: VariogramModel<T>,
 {
     conditioning_data: S,
     variogram_model: V,
     kriging_parameters: KrigingParameters,
     phantom: PhantomData<fn() -> G>, //ugly hack to get around the fact that G does not implement Sync or Send
     phantom2: PhantomData<KS>, //ugly hack to get around the fact that KS does not implement Sync or Send
+    phantom3: PhantomData<T>,
 }
 
-impl<S, V, G, KS> Kriging<S, V, G, KS>
+impl<S, V, G, KS, T> Kriging<S, V, G, KS, T>
 where
     S: SpatialQueryable<f32, G> + Sync,
-    V: VariogramModel + Sync,
-    KS: KrigingSystem + Send + Sync,
+    V: VariogramModel<T> + Sync,
+    KS: KrigingSystem<V, T> + Send + Sync,
+    T: SimdPartialOrd + SimdRealField,
+    <T as SimdValue>::Element: SimdRealField + Float,
 {
     /// Create a new simple kriging estimator with the given parameters
     /// # Arguments
@@ -67,6 +80,7 @@ where
             kriging_parameters,
             phantom: PhantomData,
             phantom2: PhantomData,
+            phantom3: PhantomData,
         }
     }
 
