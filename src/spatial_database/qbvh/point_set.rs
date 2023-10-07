@@ -9,6 +9,7 @@ use std::str::FromStr;
 
 use crate::{
     geometry::ellipsoid::Ellipsoid,
+    kriging::simple_kriging::ConditioningParams,
     spatial_database::{ConditioningProvider, SpatialDataBase},
 };
 
@@ -102,16 +103,6 @@ where
 
     fn set_data_at_ind(&mut self, ind: &Self::INDEX, data: T) {
         self.data[*ind] = data;
-    }
-}
-
-pub struct ConditioningParams {
-    pub max_n_cond: usize,
-}
-
-impl ConditioningParams {
-    pub fn new(max_n_cond: usize) -> Self {
-        Self { max_n_cond }
     }
 }
 

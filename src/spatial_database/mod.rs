@@ -11,6 +11,21 @@ pub mod coordinate_system;
 pub mod gridded_databases;
 pub mod normalized;
 pub mod qbvh;
+pub mod rtree_point_set;
+
+pub trait SpatialQueryable<T, G> {
+    fn query(&self, point: &Point3<f32>) -> (Vec<T>, Vec<Point3<f32>>);
+    fn geometry(&self) -> &G;
+}
+
+pub trait ConditioningProvider<G, T, P> {
+    fn query(
+        &self,
+        point: &Point3<f32>,
+        ellipsoid: &G,
+        params: &P,
+    ) -> (Vec<usize>, Vec<T>, Vec<Point3<f32>>);
+}
 
 pub trait SpatialDataBase<T> {
     type INDEX: Debug;
@@ -74,17 +89,3 @@ macro_rules! impl_spatial_database_for_grid {
 //         f64
 //     )
 // );
-
-pub trait SpatialQueryable<T, G> {
-    fn query(&self, point: &Point3<f32>) -> (Vec<T>, Vec<Point3<f32>>);
-    fn geometry(&self) -> &G;
-}
-
-pub trait ConditioningProvider<G, T, P> {
-    fn query(
-        &self,
-        point: &Point3<f32>,
-        ellipsoid: &G,
-        params: &P,
-    ) -> (Vec<usize>, Vec<T>, Vec<Point3<f32>>);
-}

@@ -3,9 +3,7 @@ use std::marker::PhantomData;
 use crate::{
     geometry::{ellipsoid::Ellipsoid, Geometry},
     kriging::KrigingParameters,
-    spatial_database::{
-        qbvh::point_set::ConditioningParams, ConditioningProvider, SpatialQueryable,
-    },
+    spatial_database::{ConditioningProvider, SpatialQueryable},
     variography::model_variograms::VariogramModel,
 };
 
@@ -20,6 +18,16 @@ use simba::scalar::RealField;
 use simba::simd::SimdPartialOrd;
 
 use super::KrigingSystem;
+
+pub struct ConditioningParams {
+    pub max_n_cond: usize,
+}
+
+impl ConditioningParams {
+    pub fn new(max_n_cond: usize) -> Self {
+        Self { max_n_cond }
+    }
+}
 
 pub struct SimpleKrigingSystem<T> {
     pub cond_cov_mat: Mat<f32>,
@@ -660,7 +668,7 @@ mod tests {
         spatial_database::{
             coordinate_system::{CoordinateSystem, GridSpacing},
             normalized::Normalize,
-            qbvh::point_set::PointSet,
+            rtree_point_set::point_set::PointSet,
         },
         variography::model_variograms::spherical::SphericalVariogram,
     };
@@ -707,7 +715,8 @@ mod tests {
         );
 
         // create a gridded database from a csv file (walker lake)
-        let mut gdb = PointSet::from_csv_index("./data/walker.csv", "X", "Y", "Z", "V")
+        println!("Reading Cond Data");
+        let mut gdb = PointSet::from_csv_index("C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/mineralized_domain_composites.csv", "X", "Y", "Z", "CU")
             .expect("Failed to create gdb");
 
         // normalize the data
@@ -763,14 +772,24 @@ mod tests {
         //     .indexed_iter()
         //     .map(|(ind, _)| krig_db.point_at_ind(&[ind.0, ind.1, ind.2]))
         //     .collect_vec();
-
-        let points = (0..400)
-            .cartesian_product(0..400)
-            .map(|(x, y)| {
-                let point = Point3::new(x as f32, y as f32, 0.0);
-                point
-            })
-            .collect_vec();
+        //"C:\Users\2jake\OneDrive - McGill University\Fall2022\MIME525\Project4\points_jacob.txt"
+        println!("Reading Target Data");
+        let targ = PointSet::<f32>::from_csv_index(
+            "C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/target.csv",
+            "X",
+            "Y",
+            "Z",
+            "V",
+        )
+        .unwrap();
+        let points = targ.points.clone();
+        // let points = (0..400)
+        //     .cartesian_product(0..400)
+        //     .map(|(x, y)| {
+        //         let point = Point3::new(x as f32, y as f32, 0.0);
+        //         point
+        //     })
+        //     .collect_vec();
         let values = gsgs.krig(points.as_slice());
 
         //save values to file for visualization
@@ -801,6 +820,23 @@ mod tests {
             //println!("point: {:?}, value: {}", point, value);
             let _ = out
                 .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+        }
+
+        let mut out = File::create("./test_results/sk.csv").unwrap();
+        //write header
+        out.write_all("X,Y,Z,XS,YS,ZS,V\n".as_bytes());
+
+        //write each row
+
+        for (point, value) in points.iter().zip(values.iter()) {
+            //println!("point: {:?}, value: {}", point, value);
+            let _ = out.write_all(
+                format!(
+                    "{},{},{},{},{},{},{}\n",
+                    point.x, point.y, point.z, 5, 5, 10, value
+                )
+                .as_bytes(),
+            );
         }
     }
 }
