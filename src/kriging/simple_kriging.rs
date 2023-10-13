@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use crate::{
     geometry::{ellipsoid::Ellipsoid, Geometry},
     kriging::KrigingParameters,
-    spatial_database::{ConditioningProvider, SpatialQueryable},
+    spatial_database::{zero_mean::ZeroMeanTransform, ConditioningProvider, SpatialQueryable},
     variography::model_variograms::VariogramModel,
 };
 
@@ -14,11 +14,306 @@ use indicatif::ParallelProgressIterator;
 use nalgebra::{Point3, SimdRealField, SimdValue, Vector3};
 use num_traits::{Float, NumCast};
 use rayon::prelude::*;
+use rstar::Point;
 use simba::scalar::RealField;
 use simba::simd::SimdPartialOrd;
 
 use super::KrigingSystem;
 
+pub trait SupportInterface {
+    fn center(&self) -> Point3<f32>;
+}
+
+pub trait SupportTransform<T> {
+    fn transform(self) -> T;
+}
+
+impl<T> SupportTransform<T> for T
+where
+    T: SupportInterface,
+{
+    fn transform(self) -> Self {
+        self
+    }
+}
+
+pub trait SKBuilder {
+    type Support: SupportInterface;
+
+    fn build_cov_mat<'a, I, V, T>(cov_mat: &mut Mat<f32>, cond: I, vgram: &V)
+    where
+        T: SimdValue<Element = f32> + SimdRealField + Copy,
+        V: VariogramModel<T>,
+        I: Iterator<Item = &'a Self::Support> + Clone,
+        <Self as SKBuilder>::Support: 'a;
+
+    fn build_cov_vec<'a, I, V, T>(
+        cov_vec: &mut Mat<f32>,
+        cond: I,
+        kriging_point: &Point3<f32>,
+        vgram: &V,
+    ) where
+        T: SimdValue<Element = f32> + SimdRealField + Copy,
+        V: VariogramModel<T>,
+        I: Iterator<Item = &'a Self::Support> + Clone,
+        <Self as SKBuilder>::Support: 'a;
+}
+
+pub struct SKPointSupportBuilder;
+
+impl SupportInterface for Point3<f32> {
+    fn center(&self) -> Point3<f32> {
+        *self
+    }
+}
+
+impl SupportTransform<Vec<Point3<f32>>> for Point3<f32> {
+    fn transform(self) -> Vec<Point3<f32>> {
+        vec![self]
+    }
+}
+
+impl SKBuilder for SKPointSupportBuilder {
+    type Support = Point3<f32>;
+    fn build_cov_mat<'a, I, V, T>(cov_mat: &mut Mat<f32>, cond: I, vgram: &V)
+    where
+        T: SimdValue<Element = f32> + SimdRealField + Copy,
+        V: VariogramModel<T>,
+        I: Iterator<Item = &'a Self::Support> + Clone,
+        <Self as SKBuilder>::Support: 'a,
+    {
+        let mut cnt = 0;
+        let mut len = 0;
+
+        //compute lower triangle of cov matrix
+        let mut last_insert_i = 0;
+        let mut last_insert_j = 0;
+        //let mut point = Point3::<T>::origin();
+        let mut vec = Vector3::<T>::zeros();
+        for (i, p1) in cond.clone().enumerate() {
+            len += 1;
+            for (j, p2) in cond.clone().take(i + 1).enumerate() {
+                //distance between points
+                let d = p1 - p2;
+
+                //set coords
+                vec.x.replace(cnt, d.x);
+                vec.y.replace(cnt, d.y);
+                vec.z.replace(cnt, d.z);
+
+                //update insertion counts
+                cnt += 1;
+
+                //if all lanes populated, compute covariogram and insert into matrix
+                if cnt >= T::lanes() {
+                    cnt = 0;
+
+                    //compute covariance
+                    let cov = vgram.covariogram(vec);
+                    let mut extract_ind = 0;
+                    //insert covariance into matrix on current row
+                    'outer: for insert_i in last_insert_i..=i {
+                        if insert_i == last_insert_i {
+                            for insert_j in last_insert_j..=insert_i {
+                                if extract_ind == T::lanes() {
+                                    break 'outer;
+                                }
+                                cov_mat.write(insert_i, insert_j, cov.extract(extract_ind));
+                                extract_ind += 1;
+                            }
+                        } else {
+                            for insert_j in 0..=insert_i {
+                                if extract_ind == T::lanes() {
+                                    break 'outer;
+                                }
+                                cov_mat.write(insert_i, insert_j, cov.extract(extract_ind));
+                                extract_ind += 1;
+                            }
+                        }
+                    }
+
+                    //update last insert indices
+                    if j + 1 <= i {
+                        last_insert_i = i;
+                        last_insert_j = j + 1;
+                    } else {
+                        last_insert_i = i + 1;
+                        last_insert_j = 0;
+                    }
+                }
+            }
+        }
+
+        //hanlde reamining values
+        let cov = vgram.covariogram(vec);
+        let mut extract_ind = 0;
+        //insert covariance into matrix on current row
+        'outer: for insert_i in last_insert_i..len {
+            if insert_i == last_insert_i {
+                for insert_j in last_insert_j..=insert_i {
+                    if extract_ind == T::lanes() {
+                        break 'outer;
+                    }
+                    cov_mat.write(insert_i, insert_j, cov.extract(extract_ind));
+                    extract_ind += 1;
+                }
+            } else {
+                for insert_j in 0..=insert_i {
+                    if extract_ind == T::lanes() {
+                        break 'outer;
+                    }
+                    cov_mat.write(insert_i, insert_j, cov.extract(extract_ind));
+                    extract_ind += 1;
+                }
+            }
+        }
+    }
+
+    fn build_cov_vec<'a, I, V, T>(
+        cov_vec: &mut Mat<f32>,
+        cond: I,
+        kriging_point: &Point3<f32>,
+        vgram: &V,
+    ) where
+        T: SimdValue<Element = f32> + SimdRealField + Copy,
+        V: VariogramModel<T>,
+        I: Iterator<Item = &'a Self::Support> + Clone,
+        <Self as SKBuilder>::Support: 'a,
+    {
+        let mut cnt = 0;
+        let mut len = 0;
+
+        //compute lower triangle of cov matrix
+        let mut last_insert_i = 0;
+        //let mut point = Point3::<T>::origin();
+        let mut vec = Vector3::<T>::zeros();
+        for (i, p1) in cond.enumerate() {
+            len += 1;
+            //distance between points
+            let d = p1 - kriging_point;
+
+            //set coords
+            vec.x.replace(cnt, d.x);
+            vec.y.replace(cnt, d.y);
+            vec.z.replace(cnt, d.z);
+
+            //update insertion counts
+            cnt += 1;
+
+            //if all lanes populated, compute covariogram and insert into matrix
+            if cnt >= T::lanes() {
+                cnt = 0;
+
+                //compute covariance
+                let cov = vgram.covariogram(vec);
+                let mut extract_ind = 0;
+                //insert covariance into matrix on current row
+                for insert_i in last_insert_i..=i {
+                    cov_vec.write(insert_i, 0, cov.extract(extract_ind));
+                    extract_ind += 1;
+                }
+
+                //update last insert indices
+                last_insert_i = i + 1;
+            }
+        }
+
+        //handle reamining values
+        let cov = vgram.covariogram(vec);
+        let mut extract_ind = 0;
+
+        //insert covariance into matrix on current row
+        for insert_i in last_insert_i..len {
+            cov_vec.write(insert_i, 0, cov.extract(extract_ind));
+            extract_ind += 1;
+        }
+    }
+}
+
+pub struct SKVolumeSupportBuilder;
+
+impl SupportInterface for Vec<Point3<f32>> {
+    fn center(&self) -> Point3<f32> {
+        let mut center = Point3::origin();
+        for p in self.iter() {
+            center.coords += p.coords;
+        }
+        center.coords /= self.len() as f32;
+        center
+    }
+}
+
+impl SKBuilder for SKVolumeSupportBuilder {
+    type Support = Vec<Point3<f32>>;
+    fn build_cov_mat<'a, I, V, T>(cov_mat: &mut Mat<f32>, cond: I, vgram: &V)
+    where
+        T: SimdValue<Element = f32> + SimdRealField + Copy,
+        V: VariogramModel<T>,
+        I: Iterator<Item = &'a Self::Support> + Clone,
+        <Self as SKBuilder>::Support: 'a,
+    {
+        //compute lower triangle of cov matrix
+        let mut vec = Vector3::<T>::zeros();
+        for (i, ps1) in cond.clone().enumerate() {
+            for (j, ps2) in cond.clone().take(i + 1).enumerate() {
+                let mut n = 1;
+                let mut total_cov = T::zero();
+                let mut cnt = 0;
+                //compute the average variogram value over the points
+                for p1 in ps1.iter() {
+                    for p2 in ps2.iter() {
+                        //distance between points
+                        let d = p1 - p2;
+
+                        //set coords
+                        vec.x.replace(cnt, d.x);
+                        vec.y.replace(cnt, d.y);
+                        vec.z.replace(cnt, d.z);
+
+                        //update insertion counts
+                        cnt += 1;
+
+                        //if all lanes populated, compute covariogram and insert into matrix
+                        if cnt >= T::lanes() {
+                            cnt = 0;
+                            n += T::lanes();
+
+                            //update covariance
+                            total_cov += vgram.covariogram(vec);
+                        }
+                    }
+                }
+
+                //hanlde reamining values
+                let mut remaining_cov = vgram.covariogram(vec);
+                n += cnt;
+                //set unused lanes to 0
+                for extract_ind in cnt..T::lanes() {
+                    remaining_cov.replace(extract_ind, 0.0);
+                }
+                total_cov += remaining_cov;
+
+                let avg_cov = total_cov.simd_horizontal_sum() / n as f32;
+
+                cov_mat.write(i, j, avg_cov);
+            }
+        }
+    }
+
+    fn build_cov_vec<'a, I, V, T>(
+        cov_vec: &mut Mat<f32>,
+        cond: I,
+        kriging_point: &Point3<f32>,
+        vgram: &V,
+    ) where
+        T: SimdValue<Element = f32> + SimdRealField + Copy,
+        V: VariogramModel<T>,
+        I: Iterator<Item = &'a Self::Support> + Clone,
+        <Self as SKBuilder>::Support: 'a,
+    {
+        todo!()
+    }
+}
 pub struct ConditioningParams {
     pub max_n_cond: usize,
 }
@@ -29,7 +324,7 @@ impl ConditioningParams {
     }
 }
 
-pub struct SimpleKrigingSystem<T> {
+pub struct SimpleKrigingSystem {
     pub cond_cov_mat: Mat<f32>,
     pub krig_point_cov_vec: Mat<f32>,
     pub weights: Mat<f32>,
@@ -38,17 +333,9 @@ pub struct SimpleKrigingSystem<T> {
     pub cholesky_compute_mem: GlobalMemBuffer,
     pub cholesky_solve_mem: GlobalMemBuffer,
     pub n_elems: usize,
-    pub cond_x_buffer: T,
-    pub cond_y_buffer: T,
-    pub cond_z_buffer: T,
-    pub cov_buffer: T,
-    pub simd_vec_buffer: Vec<Vector3<T>>,
 }
 
-impl<T> Clone for SimpleKrigingSystem<T>
-where
-    T: Clone,
-{
+impl Clone for SimpleKrigingSystem {
     fn clone(&self) -> Self {
         let n_elems = self.n_elems;
         Self {
@@ -69,18 +356,13 @@ where
                 faer_cholesky::llt::solve::solve_req::<f32>(n_elems, 1, Parallelism::None).unwrap(),
             ),
             n_elems,
-            cond_x_buffer: self.cond_x_buffer.clone(),
-            cond_y_buffer: self.cond_y_buffer.clone(),
-            cond_z_buffer: self.cond_z_buffer.clone(),
-            cov_buffer: self.cov_buffer.clone(),
-            simd_vec_buffer: Vec::with_capacity(n_elems * (n_elems + 1) / (2 * 16) + 1),
         }
     }
 }
 
-impl<T> SimpleKrigingSystem<T>
-where
-    T: SimdValue<Element = f32> + SimdRealField + Copy,
+impl SimpleKrigingSystem
+// where
+//     T: SimdValue<Element = f32> + SimdRealField + Copy,
 {
     /// Create a new simple kriging system
     /// # Arguments
@@ -111,43 +393,9 @@ where
             cholesky_compute_mem,
             cholesky_solve_mem,
             n_elems,
-            cond_x_buffer: T::zero(),
-            cond_y_buffer: T::zero(),
-            cond_z_buffer: T::zero(),
-            cov_buffer: T::zero(),
-            simd_vec_buffer: Vec::with_capacity(n_elems * (n_elems + 1) / (2 * 16) + 1),
         }
     }
 
-    /// Build the covariance matrix and covariance vector for the system
-    /// # Arguments
-    /// * `cond_points` - The conditioning points for the kriging point
-    /// * `kriging_point` - The kriging point
-    /// * `vgram` - The variogram model
-    // pub fn build_covariance_matrix_and_vector<V>(
-    //     &mut self,
-    //     cond_points: &[Point3<f32>],
-    //     kriging_point: &Point3<f32>,
-    //     vgram: &V,
-    // ) where
-    //     V: VariogramModel<MAYBE_SIMD = T>,
-    // {
-    //     let n_elems = cond_points.len();
-    //     unsafe { self.cond_cov_mat.set_dims(n_elems, n_elems) };
-    //     unsafe { self.krig_point_cov_vec.set_dims(n_elems, 1) };
-    //     unsafe { self.weights.set_dims(n_elems, 1) };
-
-    //     for i in 0..cond_points.len() {
-    //         for j in 0..=i {
-    //             let h = cond_points[i] - cond_points[j];
-    //             let cov = vgram.covariogram(h);
-    //             unsafe { self.cond_cov_mat.write_unchecked(i, j, cov) };
-    //         }
-    //         let h = kriging_point - cond_points[i];
-    //         let cov = vgram.covariogram(h);
-    //         unsafe { self.krig_point_cov_vec.write_unchecked(i, 0, cov) };
-    //     }
-    // }
     /// Set dimensions of the system for the given number of elements
     /// # Arguments
     /// * `n_elems` - The number of elements in the system
@@ -160,176 +408,6 @@ where
         unsafe { self.krig_point_cov_vec.set_dims(n_elems, 1) };
         unsafe { self.weights.set_dims(n_elems, 1) };
         unsafe { self.values.set_dims(n_elems, 1) };
-    }
-
-    /// Build the covariance matrix for the system
-    /// # Arguments
-    /// * `cond_points` - The conditioning points for the kriging point
-    /// * 'vgram' - The variogram model
-    #[inline(always)]
-    pub fn vectorized_build_covariance_matrix<V>(&mut self, cond_points: &[Point3<f32>], vgram: &V)
-    where
-        V: VariogramModel<T>,
-    {
-        unsafe { self.simd_vec_buffer.set_len(0) };
-
-        let mut cnt = 0;
-
-        //compute lower triangle of cov matrix
-        for (i, p1) in cond_points.iter().enumerate() {
-            for p2 in cond_points[0..=i].iter() {
-                let d = p1 - p2;
-                // self.cond_x_buffer[cnt] = d.x;
-                // self.cond_y_buffer[cnt] = d.y;
-                // self.cond_z_buffer[cnt] = d.z;
-
-                self.cond_x_buffer.replace(
-                    cnt, d.x, //<<T as SimdValue>::Element as NumCast>::from(d.x).unwrap(),
-                );
-                self.cond_y_buffer.replace(
-                    cnt, d.y, //<<T as SimdValue>::Element as NumCast>::from(d.y).unwrap(),
-                );
-                self.cond_z_buffer.replace(
-                    cnt, d.z, //<<T as SimdValue>::Element as NumCast>::from(d.z).unwrap(),
-                );
-
-                cnt += 1;
-                if cnt >= T::lanes() {
-                    cnt = 0;
-                    // let simd_x = f32x16::from(self.cond_x_buffer);
-                    // let simd_y = f32x16::from(self.cond_y_buffer);
-                    // let simd_z = f32x16::from(self.cond_z_buffer);
-                    let vec_point =
-                        Vector3::new(self.cond_x_buffer, self.cond_y_buffer, self.cond_z_buffer);
-                    self.simd_vec_buffer.push(vec_point);
-                }
-            }
-        }
-
-        // let simd_x = f32x16::from(self.cond_x_buffer);
-        // let simd_y = f32x16::from(self.cond_y_buffer);
-        // let simd_z = f32x16::from(self.cond_z_buffer);
-        let vec_point = Vector3::new(self.cond_x_buffer, self.cond_y_buffer, self.cond_z_buffer);
-        self.simd_vec_buffer.push(vec_point);
-
-        let mut simd_cov_iter = self
-            .simd_vec_buffer
-            .iter()
-            .map(|simd_point| vgram.covariogram(*simd_point));
-
-        let mut pop_cnt = 0;
-
-        //populate covariance matrix using lower triangle value
-        for i in 0..cond_points.len() {
-            for j in 0..=i {
-                if pop_cnt % T::lanes() == 0 {
-                    self.cov_buffer = unsafe { simd_cov_iter.next().unwrap_unchecked().into() };
-                }
-
-                unsafe {
-                    self.cond_cov_mat.write_unchecked(
-                        i,
-                        j,
-                        self.cov_buffer.extract(pop_cnt % T::lanes()),
-                    );
-                };
-                pop_cnt += 1;
-            }
-        }
-    }
-
-    /// Build the covariance vector for the system
-    /// # Arguments
-    /// * `cond_points` - The conditioning points for the kriging point
-    /// * `kriging_point` - The kriging point
-    /// * 'vgram' - The variogram model
-    #[inline(always)]
-    pub fn vectorized_build_covariance_vector<V>(
-        &mut self,
-        cond_points: &[Point3<f32>],
-        kriging_point: &Point3<f32>,
-        vgram: &V,
-    ) where
-        V: VariogramModel<T>,
-    {
-        unsafe { self.simd_vec_buffer.set_len(0) };
-
-        let mut cnt = 0;
-
-        //compute cov between kriging point and all conditioning points
-        for p1 in cond_points.iter() {
-            let d = p1 - kriging_point;
-            // self.cond_x_buffer[cnt] = d.x;
-            // self.cond_y_buffer[cnt] = d.y;
-            // self.cond_z_buffer[cnt] = d.z;
-
-            self.cond_x_buffer.replace(
-                cnt, d.x, //<<T as SimdValue>::Element as NumCast>::from(d.x).unwrap(),
-            );
-            self.cond_y_buffer.replace(
-                cnt, d.y, //<<T as SimdValue>::Element as NumCast>::from(d.y).unwrap(),
-            );
-            self.cond_z_buffer.replace(
-                cnt, d.z, //<<T as SimdValue>::Element as NumCast>::from(d.z).unwrap(),
-            );
-            cnt += 1;
-            if cnt >= T::lanes() {
-                cnt = 0;
-                // let simd_x = f32x16::from(self.cond_x_buffer);
-                // let simd_y = f32x16::from(self.cond_y_buffer);
-                // let simd_z = f32x16::from(self.cond_z_buffer);
-                let vec_point =
-                    Vector3::new(self.cond_x_buffer, self.cond_y_buffer, self.cond_z_buffer);
-                self.simd_vec_buffer.push(vec_point);
-            }
-        }
-
-        // let simd_x = f32x16::from(self.cond_x_buffer);
-        // let simd_y = f32x16::from(self.cond_y_buffer);
-        // let simd_z = f32x16::from(self.cond_z_buffer);
-        let vec_point = Vector3::new(self.cond_x_buffer, self.cond_y_buffer, self.cond_z_buffer);
-        self.simd_vec_buffer.push(vec_point);
-
-        let mut simd_cov_iter = self
-            .simd_vec_buffer
-            .iter()
-            .map(|simd_point| vgram.covariogram(*simd_point));
-
-        let mut pop_cnt = 0;
-
-        //populate covariance matrix using lower triangle value
-        for i in 0..cond_points.len() {
-            if pop_cnt % T::lanes() == 0 {
-                self.cov_buffer = unsafe { simd_cov_iter.next().unwrap_unchecked().into() };
-            }
-
-            unsafe {
-                self.krig_point_cov_vec.write_unchecked(
-                    i,
-                    0,
-                    self.cov_buffer.extract(pop_cnt % T::lanes()),
-                )
-            };
-            pop_cnt += 1;
-        }
-    }
-
-    /// Build the covariance matrix and vector for the system
-    /// # Arguments
-    /// * `cond_points` - The conditioning points for the kriging point
-    /// * `kriging_point` - The kriging point
-    /// * 'vgram' - The variogram model
-    #[inline(always)]
-    pub fn vectorized_build_covariance_matrix_and_vector<V>(
-        &mut self,
-        cond_points: &[Point3<f32>],
-        kriging_point: &Point3<f32>,
-        vgram: &V,
-    ) where
-        V: VariogramModel<T>,
-    {
-        self.vectorized_build_covariance_matrix(cond_points, vgram);
-        self.vectorized_build_covariance_vector(cond_points, kriging_point, vgram);
     }
 
     /// Compute SK weights
@@ -365,20 +443,28 @@ where
     /// * `kriging_point` - The kriging point
     /// * 'vgram' - The variogram model
     #[inline(always)]
-    pub fn build_system<V>(
+    pub fn build_system<V, VT, SKB>(
         &mut self,
-        cond_points: &[Point3<f32>],
+        cond_points: &[SKB::Support],
         cond_values: &[f32],
         kriging_point: &Point3<f32>,
         vgram: &V,
     ) where
-        V: VariogramModel<T>,
+        V: VariogramModel<VT>,
+        VT: SimdValue<Element = f32> + SimdRealField + Copy,
+        SKB: SKBuilder,
     {
         //set dimensions
         self.set_dim(cond_points.len());
 
         //build covariance matrix and vector
-        self.vectorized_build_covariance_matrix_and_vector(cond_points, kriging_point, vgram);
+        SKB::build_cov_mat(&mut self.cond_cov_mat, cond_points.iter(), vgram);
+        SKB::build_cov_vec(
+            &mut self.krig_point_cov_vec,
+            cond_points.iter(),
+            kriging_point,
+            vgram,
+        );
 
         //store values
         unsafe { self.values.set_dims(cond_values.len(), 1) };
@@ -420,21 +506,28 @@ where
     /// * `kriging_point` - The kriging point
     /// * 'vgram' - The variogram model
     #[inline(always)]
-    pub fn build_mini_system<V>(
+    pub fn build_mini_system<V, VT, SKB>(
         &mut self,
-        cond_points: &[Point3<f32>],
+        cond_points: &[SKB::Support],
         kriging_point: &Point3<f32>,
         vgram: &V,
     ) -> MiniSKSystem
     where
-        V: VariogramModel<T>,
+        V: VariogramModel<VT>,
+        VT: SimdValue<Element = f32> + SimdRealField + Copy,
+        SKB: SKBuilder,
     {
         //set dimensions
         self.set_dim(cond_points.len());
 
         //build covariance matrix and vector
-        self.vectorized_build_covariance_matrix_and_vector(cond_points, kriging_point, vgram);
-
+        SKB::build_cov_mat(&mut self.cond_cov_mat, cond_points.iter(), vgram);
+        SKB::build_cov_vec(
+            &mut self.krig_point_cov_vec,
+            cond_points.iter(),
+            kriging_point,
+            vgram,
+        );
         self.c_0 = vgram.c_0();
 
         //compute kriging weights
@@ -481,7 +574,7 @@ impl MiniSKSystem {
     }
 }
 
-impl<V, T> KrigingSystem<V, T> for SimpleKrigingSystem<T>
+impl<V, T> KrigingSystem<V, T> for SimpleKrigingSystem
 where
     T: SimdValue<Element = f32> + SimdRealField + Clone + Copy,
     T: SimdPartialOrd + SimdRealField,
@@ -492,14 +585,16 @@ where
         SimpleKrigingSystem::new(n_elems)
     }
 
-    fn build_system(
+    fn build_system<SKB>(
         &mut self,
-        conditioning_points: &[Point3<f32>],
+        conditioning_points: &[SKB::Support],
         conditioning_values: &[f32],
         kriging_point: &Point3<f32>,
         variogram_model: &V,
-    ) {
-        SimpleKrigingSystem::build_system(
+    ) where
+        SKB: SKBuilder,
+    {
+        SimpleKrigingSystem::build_system::<V, T, SKB>(
             self,
             conditioning_points,
             conditioning_values,
@@ -520,69 +615,15 @@ where
 pub struct SimpleKriging<S, V, T>
 where
     V: VariogramModel<T>,
-    T: SimdPartialOrd + SimdRealField,
-    <T as SimdValue>::Element: SimdRealField + Float,
+    T: SimdPartialOrd + SimdRealField + SimdValue<Element = f32> + Copy,
 {
     conditioning_data: S,
     variogram_model: V,
     search_ellipsoid: Ellipsoid,
     query_params: ConditioningParams,
+    zero_mean_transformer: ZeroMeanTransform<f32>,
     phantom: PhantomData<T>,
 }
-
-// impl<S, V, G> SimpleKriging<S, V, G>
-// where
-//     S: SpatialQueryable<f32, G> + Sync,
-//     V: VariogramModel + Sync,
-//     G: Sync,
-// {
-//     /// Create a new simple kriging estimator with the given parameters
-//     /// # Arguments
-//     /// * `conditioning_data` - The data to condition the kriging system on
-//     /// * `variogram_model` - The variogram model to use
-//     /// * `search_ellipsoid` - The search ellipsoid to use
-//     /// * `kriging_parameters` - The kriging parameters to use
-//     /// # Returns
-//     /// A new simple kriging estimator
-//     pub fn new(
-//         conditioning_data: S,
-//         variogram_model: V,
-//         kriging_parameters: KrigingParameters,
-//     ) -> Self {
-//         Self {
-//             conditioning_data,
-//             variogram_model,
-//             kriging_parameters,
-//             phantom: PhantomData,
-//         }
-//     }
-
-//     /// Perform simple kriging at all kriging points
-//     pub fn krig(&self, kriging_points: &[Point3<f32>]) -> Vec<f32> {
-//         //construct kriging system
-//         let kriging_system = SimpleKrigingSystem::new(self.kriging_parameters.max_octant_data * 8);
-
-//         kriging_points
-//             .par_iter()
-//             .progress()
-//             .map_with(kriging_system.clone(), |local_system, kriging_point| {
-//                 //let mut local_system = kriging_system.clone();
-//                 //get nearest points and values
-//                 let (cond_values, cond_points) = self.conditioning_data.query(kriging_point);
-
-//                 //build kriging system for point
-//                 local_system.build_system(
-//                     &cond_points,
-//                     cond_values.as_slice(),
-//                     kriging_point,
-//                     &self.variogram_model,
-//                 );
-
-//                 local_system.estimate()
-//             })
-//             .collect::<Vec<f32>>()
-//     }
-// }
 
 impl<S, V, T> SimpleKriging<S, V, T>
 where
@@ -604,18 +645,31 @@ where
         variogram_model: V,
         search_ellipsoid: Ellipsoid,
         query_params: ConditioningParams,
+        mean: f32,
     ) -> Self {
+        let mut conditioning_data = conditioning_data;
+        //construct zero mean transformer
+        let zero_mean_transformer = ZeroMeanTransform::new(mean);
+
+        //aply zero mean transformer
+        conditioning_data.data_mut().iter_mut().for_each(|v| {
+            *v = zero_mean_transformer.transform(*v);
+        });
         Self {
             conditioning_data,
             variogram_model,
             search_ellipsoid,
             query_params,
+            zero_mean_transformer,
             phantom: PhantomData,
         }
     }
 
     /// Perform simple kriging at all kriging points
-    pub fn krig(&self, kriging_points: &[Point3<f32>]) -> Vec<f32> {
+    pub fn krig<SKB>(&self, kriging_points: &[Point3<f32>]) -> Vec<f32>
+    where
+        SKB: SKBuilder<Support = S::Shape>,
+    {
         //construct kriging system
         let kriging_system = SimpleKrigingSystem::new(self.query_params.max_n_cond * 8);
 
@@ -632,20 +686,16 @@ where
                         self.conditioning_data
                             .query(kriging_point, &ellipsoid, &self.query_params);
 
-                    // if cond_points.len() > 0 {
-                    //     println!("cond_points: {:?}", cond_points);
-                    //     println!("search ellipsoid: {:?}", ellipsoid);
-                    // }
-
                     //build kriging system for point
-                    local_system.build_system(
+                    local_system.build_system::<V, T, SKB>(
                         &cond_points,
                         cond_values.as_slice(),
                         kriging_point,
                         &self.variogram_model,
                     );
 
-                    local_system.estimate()
+                    self.zero_mean_transformer
+                        .back_transform(local_system.estimate())
                 },
             )
             .collect::<Vec<f32>>()
@@ -690,7 +740,7 @@ mod tests {
         let rot = UnitQuaternion::identity();
         let vgram = SphericalVariogram::new(Vector3::new(10f32, 10f32, 10f32), 1f32, 0.25f32, rot);
         let mut system = SimpleKrigingSystem::new(cond_points.len());
-        system.build_system(
+        system.build_system::<_, _, SKPointSupportBuilder>(
             cond_points.as_slice(),
             values.as_slice(),
             &kriging_point,
@@ -702,6 +752,69 @@ mod tests {
 
         assert_eq!(mean, 4.148547);
         assert_eq!(variance, 0.49257421);
+    }
+
+    #[test]
+    fn volumetric_cov() {
+        let point_set_1 = vec![
+            Point3::new(2f32, 2f32, 0f32),
+            Point3::new(3f32, 7f32, 0f32),
+            Point3::new(9f32, 9f32, 0f32),
+            Point3::new(6f32, 5f32, 0f32),
+            Point3::new(5f32, 3f32, 0f32),
+        ];
+
+        let point_set_2 = point_set_1
+            .iter()
+            .take(3)
+            .map(|p| {
+                let mut p = p.clone();
+                p.x += 100f32;
+                p.y += 100f32;
+                p.z += 100f32;
+                p
+            })
+            .collect_vec();
+
+        let point_set_3 = point_set_1
+            .iter()
+            .take(4)
+            .map(|p| {
+                let mut p = p.clone();
+                p.x += 200f32;
+                p
+            })
+            .collect_vec();
+
+        let point_set_4 = point_set_1
+            .iter()
+            .take(5)
+            .map(|p| {
+                let mut p = p.clone();
+                p.x += 300f32;
+                p.y += 300f32;
+                p
+            })
+            .collect_vec();
+
+        let point_sets = vec![point_set_1, point_set_2, point_set_3, point_set_4];
+
+        let vgram = SphericalVariogram::<f32>::new(
+            Vector3::new(1000.0, 1000.0, 1000.0),
+            1.0,
+            0.0,
+            UnitQuaternion::identity(),
+        );
+
+        let mut cov_mat = Mat::<f32>::zeros(4, 4);
+
+        // SKPointSupportBuilder::build_volumetric_average(
+        //     &mut cov_mat,
+        //     point_sets.as_slice(),
+        //     &vgram,
+        // );
+
+        println!("{:?}", cov_mat);
     }
 
     #[test]
@@ -719,32 +832,19 @@ mod tests {
         let mut gdb = PointSet::from_csv_index("C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/mineralized_domain_composites.csv", "X", "Y", "Z", "CU")
             .expect("Failed to create gdb");
 
-        // normalize the data
-        gdb.normalize();
-
         // create a grid to store the simulation values
         let spacing = GridSpacing {
             x: 0.1,
             y: 0.1,
             z: 1.0,
         };
-        // let krig_grid_arr = Array3::<Option<f32>>::from_elem([5000, 5000, 1], None);
-        // let krig_db = InCompleteGriddedDataBase::new(
-        //     krig_grid_arr,
-        //     spacing.clone(),
-        //     coordinate_system.clone(),
-        // );
 
-        // create a spherical variogram
-        // azimuth = 0, dip = 0, plunge = 0
-        // range_x = 150, range_y = 50, range_z = 1
-        // sill = 1, nugget = 0
         let vgram_rot = UnitQuaternion::identity();
         let cs = CoordinateSystem::new(Default::default(), Default::default());
         let range = Vector3::new(
-            WideF32x8::splat(150.0),
-            WideF32x8::splat(50.0),
-            WideF32x8::splat(10.0),
+            WideF32x8::splat(200.0),
+            WideF32x8::splat(200.0),
+            WideF32x8::splat(200.0),
         );
         let sill = WideF32x8::splat(1.0f32);
         let nugget = WideF32x8::splat(0.2);
@@ -752,17 +852,21 @@ mod tests {
         let spherical_vgram = SphericalVariogram::new(range, sill, nugget, vgram_rot);
 
         // create search ellipsoid
-        let search_ellipsoid = Ellipsoid::new(150.0, 50.0, 10.0, cs.clone());
+        let search_ellipsoid = Ellipsoid::new(200f32, 200f32, 200f32, cs.clone());
 
         // create a query engine for the conditioning data
         //let query_engine = GriddedDataBaseOctantQueryEngine::new(search_ellipsoid, &gdb, 16);
 
+        let mt = ZeroMeanTransform::from(gdb.data());
+        let mean = mt.mean();
+
         // create a gsgs system
-        let gsgs = SimpleKriging::new(
+        let sk = SimpleKriging::new(
             gdb.clone(),
             spherical_vgram,
             search_ellipsoid,
             ConditioningParams::new(8),
+            mean,
         );
 
         //simulate values on grid
@@ -790,7 +894,14 @@ mod tests {
         //         point
         //     })
         //     .collect_vec();
-        let values = gsgs.krig(points.as_slice());
+        let time1 = std::time::Instant::now();
+        let values = sk.krig::<SKPointSupportBuilder>(points.as_slice());
+        let time2 = std::time::Instant::now();
+        println!("Time: {:?}", (time2 - time1).as_secs());
+        println!(
+            "Points per minute: {}",
+            values.len() as f32 / (time2 - time1).as_secs_f32() * 60.0
+        );
 
         //save values to file for visualization
 

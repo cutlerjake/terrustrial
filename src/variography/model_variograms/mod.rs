@@ -6,8 +6,7 @@ pub mod spherical;
 
 pub trait VariogramModel<T>
 where
-    T: SimdPartialOrd + SimdRealField,
-    <T as SimdValue>::Element: SimdRealField + Float,
+    T: SimdValue<Element = f32> + Copy,
 {
     // fn variogram(&self, h: Vector3<f32>) -> f32;
     // fn covariogram(&self, h: Vector3<f32>) -> f32;

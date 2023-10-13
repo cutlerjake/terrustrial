@@ -1,4 +1,5 @@
 // #![feature(portable_simd)]
+pub mod decomposition;
 pub mod geometry;
 pub mod kriging;
 pub mod simulation;

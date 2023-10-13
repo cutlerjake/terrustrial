@@ -15,7 +15,7 @@ pub mod incomplete_grid;
 /// Gridded database interface.
 pub trait GriddedDataBaseInterface<T, CS>
 where
-    CS: SimdValue + SimdRealField + Float,
+    CS: SimdValue + SimdRealField + Float + Default,
 {
     fn coord_to_high_ind(&self, point: &Point3<f32>) -> [isize; 3];
     fn offset_ind(&self, ind: [usize; 3], offset: [isize; 3]) -> Option<[usize; 3]>;

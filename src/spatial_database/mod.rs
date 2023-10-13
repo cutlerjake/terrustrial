@@ -12,6 +12,11 @@ pub mod gridded_databases;
 pub mod normalized;
 pub mod qbvh;
 pub mod rtree_point_set;
+pub mod zero_mean;
+
+pub trait PointProvider {
+    fn points(&self) -> &[Point3<f32>];
+}
 
 pub trait SpatialQueryable<T, G> {
     fn query(&self, point: &Point3<f32>) -> (Vec<T>, Vec<Point3<f32>>);
@@ -19,12 +24,17 @@ pub trait SpatialQueryable<T, G> {
 }
 
 pub trait ConditioningProvider<G, T, P> {
+    type Shape;
     fn query(
         &self,
         point: &Point3<f32>,
         ellipsoid: &G,
         params: &P,
-    ) -> (Vec<usize>, Vec<T>, Vec<Point3<f32>>);
+    ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>);
+
+    fn points(&self) -> &[Point3<f32>];
+    fn data(&self) -> &[T];
+    fn data_mut(&mut self) -> &mut [T];
 }
 
 pub trait SpatialDataBase<T> {

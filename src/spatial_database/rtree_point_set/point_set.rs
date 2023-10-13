@@ -182,17 +182,14 @@ impl<T> ConditioningProvider<Ellipsoid, T, ConditioningParams> for PointSet<T>
 where
     T: Clone,
 {
+    type Shape = Point3<f32>;
     fn query(
         &self,
         point: &Point3<f32>,
         ellipsoid: &Ellipsoid,
         params: &ConditioningParams,
-    ) -> (Vec<usize>, Vec<T>, Vec<Point3<f32>>) {
-        // println!("HELLO");
+    ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>) {
         let mut cond_points = ConditioningDataCollector::new(ellipsoid, params.max_n_cond);
-
-        // println!("stop: {:?}", cond_points.stop);
-        // println!("nodes: {:?}", self.tree.size());
 
         for (point, dist) in self
             .tree
@@ -205,19 +202,6 @@ where
             }
         }
 
-        // let _ = self
-        //     .tree
-        //     .nearest_neighbor_iter_with_distance_2(&[point.x, point.y, point.z])
-        //     .take_while(|(p, dist)| {
-        //         println!("stop: {:?}", cond_points.stop);
-        //         let env = p.geom();
-        //         println!("stop: {:?}", cond_points.stop);
-        //         cond_points.insert_octant_point(Point3::new(env[0], env[1], env[2]), *dist, p.data);
-        //         println!("stop: {:?}", cond_points.stop);
-        //         println!("");
-        //         !cond_points.stop
-        //     });
-
         let inds: Vec<usize> = cond_points
             .octant_inds
             .into_iter()
@@ -228,6 +212,18 @@ where
         let data = inds.iter().map(|ind| self.data[*ind].clone()).collect();
 
         (inds, data, points)
+    }
+
+    fn points(&self) -> &[Point3<f32>] {
+        self.points.as_slice()
+    }
+
+    fn data(&self) -> &[T] {
+        self.data.as_slice()
+    }
+
+    fn data_mut(&mut self) -> &mut [T] {
+        self.data.as_mut_slice()
     }
 }
 

@@ -110,12 +110,13 @@ impl<T> ConditioningProvider<Ellipsoid, T, ConditioningParams> for PointSet<T>
 where
     T: Clone,
 {
+    type Shape = Point3<f32>;
     fn query(
         &self,
         point: &Point3<f32>,
         ellipsoid: &Ellipsoid,
         params: &ConditioningParams,
-    ) -> (Vec<usize>, Vec<T>, Vec<Point3<f32>>) {
+    ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>) {
         let mut cond_points =
             ConditioningDataCollector::new(*point, ellipsoid, params.max_n_cond, &self);
 
@@ -131,5 +132,17 @@ where
         let data = inds.iter().map(|ind| self.data[*ind].clone()).collect();
 
         (inds, data, points)
+    }
+
+    fn points(&self) -> &[Point3<f32>] {
+        self.points.as_slice()
+    }
+
+    fn data(&self) -> &[T] {
+        self.data.as_slice()
+    }
+
+    fn data_mut(&mut self) -> &mut [T] {
+        self.data.as_mut_slice()
     }
 }
