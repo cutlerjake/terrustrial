@@ -16,6 +16,30 @@ use super::simple_kriging::SupportInterface;
 use super::simple_kriging::SupportTransform;
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
+pub trait ValueTransform<T> {
+    fn transform(value: T) -> T;
+}
+
+pub struct NoTransfrom;
+
+impl<T> ValueTransform<T> for NoTransfrom {
+    fn transform(value: T) -> T {
+        value
+    }
+}
+
+pub struct AverageTransfrom;
+
+impl ValueTransform<Vec<f32>> for AverageTransfrom {
+    fn transform(value: Vec<f32>) -> Vec<f32> {
+        let mut sum = 0.0;
+        for x in value.iter() {
+            sum += x;
+        }
+        vec![sum / (value.len() as f32)]
+    }
+}
+
 pub struct GSKParameters {
     max_group_size: usize,
     max_cond_data: usize,
@@ -54,7 +78,7 @@ where
             phantom_v_type: std::marker::PhantomData,
         }
     }
-    pub fn estimate<SKB, MS>(&self, groups: &Vec<Vec<SKB::Support>>) -> Vec<f32>
+    pub fn estimate<SKB, MS, TF>(&self, groups: &Vec<Vec<SKB::Support>>) -> Vec<f32>
     where
         SKB: SKBuilder,
         S::Shape: SupportTransform<SKB::Support>,
@@ -63,6 +87,7 @@ where
         <SKB as SKBuilder>::Support: SupportInterface, // why do I need this the trait already requires this?!?!?
         SKB::Support: Sync,
         MS: MiniLUSystem,
+        TF: ValueTransform<Vec<f32>>,
     {
         let system = LUSystem::new(
             self.parameters.max_group_size,
@@ -105,7 +130,7 @@ where
 
                     mini_system.populate_cond_values_est(cond_values.as_slice());
 
-                    mini_system.estimate()
+                    TF::transform(mini_system.estimate())
                 },
             )
             .flatten()
@@ -118,6 +143,7 @@ mod test {
     use std::{fs::File, io::Write};
 
     use nalgebra::{Translation3, UnitQuaternion, Vector3};
+    use parry3d::bounding_volume::Aabb;
     use simba::simd::WideF32x8;
 
     use crate::{
@@ -125,7 +151,7 @@ mod test {
         kriging::simple_kriging::{SKPointSupportBuilder, SKVolumeSupportBuilder},
         spatial_database::{
             coordinate_system::CoordinateSystem, rtree_point_set::point_set::PointSet,
-            zero_mean::ZeroMeanTransform,
+            zero_mean::ZeroMeanTransform, DiscretiveVolume,
         },
         variography::model_variograms::spherical::SphericalVariogram,
     };
@@ -162,7 +188,7 @@ mod test {
 
         // create a gsk system
         let parameters = GSKParameters {
-            max_group_size: 64,
+            max_group_size: 250,
             max_cond_data: 100,
         };
         let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
@@ -180,19 +206,35 @@ mod test {
         let points = targ.points.clone();
 
         //map points in vec of group of points (64)
+        //map points in vec of group of points (64)
         let mut groups = Vec::new();
-        let mut group = Vec::new();
+        //let mut group = Vec::new();
         for (i, point) in points.iter().enumerate() {
-            group.push(*point);
+            let aabb = Aabb::new(
+                Point3::new(point.x, point.y, point.z),
+                Point3::new(point.x + 5.0, point.y + 5.0, point.z + 10.0),
+            );
 
-            if i % 63 == 0 && i != 0 {
-                groups.push(group.clone());
-                group.clear();
-            }
+            groups.push(aabb.discretize(2f32, 2f32, 2f32));
+            // for x in 0..5 {
+            //     for y in 0..5 {
+            //         for z in 0..10 {
+            //             group.push(Point3::new(
+            //                 point.x + x as f32,
+            //                 point.y + y as f32,
+            //                 point.z + z as f32,
+            //             ));
+            //         }
+            //     }
+            // }
+
+            // groups.push(group.clone());
+            // group.clear();
         }
 
         let time1 = std::time::Instant::now();
-        let values = gsk.estimate::<SKPointSupportBuilder, MiniLUOKSystem>(&groups);
+        let values =
+            gsk.estimate::<SKPointSupportBuilder, MiniLUOKSystem, AverageTransfrom>(&groups);
         let time2 = std::time::Instant::now();
         println!("Time: {:?}", (time2 - time1).as_secs());
         println!(
@@ -279,7 +321,7 @@ mod test {
 
         // create a gsk system
         let parameters = GSKParameters {
-            max_group_size: 64,
+            max_group_size: 250,
             max_cond_data: 100,
         };
         let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
@@ -300,16 +342,25 @@ mod test {
         let mut groups = Vec::new();
         let mut group = Vec::new();
         for (i, point) in points.iter().enumerate() {
-            group.push(*point);
-
-            if i % 63 == 0 && i != 0 {
-                groups.push(group.clone());
-                group.clear();
+            for x in 0..5 {
+                for y in 0..5 {
+                    for z in 0..10 {
+                        group.push(Point3::new(
+                            point.x + x as f32,
+                            point.y + y as f32,
+                            point.z + z as f32,
+                        ));
+                    }
+                }
             }
+
+            groups.push(group.clone());
+            group.clear();
         }
 
         let time1 = std::time::Instant::now();
-        let values = gsk.estimate::<SKPointSupportBuilder, MiniLUSKSystem>(&groups);
+        let values =
+            gsk.estimate::<SKPointSupportBuilder, MiniLUSKSystem, AverageTransfrom>(&groups);
         let time2 = std::time::Instant::now();
         println!("Time: {:?}", (time2 - time1).as_secs());
         println!(
@@ -319,7 +370,7 @@ mod test {
 
         //save values to file for visualization
 
-        let mut out = File::create("./test_results/lu_ok.txt").unwrap();
+        let mut out = File::create("./test_results/lu_sk_block_mean.txt").unwrap();
         let _ = out.write_all(b"surfs\n");
         let _ = out.write_all(b"4\n");
         let _ = out.write_all(b"x\n");
@@ -333,7 +384,7 @@ mod test {
                 .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
         }
 
-        let mut out = File::create("./test_results/lu_ok_cond_data.txt").unwrap();
+        let mut out = File::create("./test_results/lu_ok_block_mean_cond_data.txt").unwrap();
         let _ = out.write_all(b"surfs\n");
         let _ = out.write_all(b"4\n");
         let _ = out.write_all(b"x\n");
@@ -347,7 +398,7 @@ mod test {
                 .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
         }
 
-        let mut out = File::create("./test_results/lu_ok.csv").unwrap();
+        let mut out = File::create("./test_results/lu_sk_block_mean..csv").unwrap();
         //write header
         let _ = out.write_all("X,Y,Z,XS,YS,ZS,V\n".as_bytes());
 
@@ -394,9 +445,10 @@ mod test {
         );
 
         // create a gsk system
+        let group_size = 10;
         let parameters = GSKParameters {
-            max_group_size: 1,
-            max_cond_data: 8,
+            max_group_size: group_size,
+            max_cond_data: 20,
         };
         let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
 
@@ -417,10 +469,11 @@ mod test {
         let mut group = Vec::new();
         for (i, point) in points.iter().enumerate() {
             //iterate over 5x5x10 grid originating at point
+            let mut block = Vec::new();
             for x in 0..5 {
                 for y in 0..5 {
                     for z in 0..10 {
-                        group.push(Point3::new(
+                        block.push(Point3::new(
                             point.x + x as f32,
                             point.y + y as f32,
                             point.z + z as f32,
@@ -428,13 +481,16 @@ mod test {
                     }
                 }
             }
+            group.push(block);
 
-            groups.push(vec![group.clone()]);
-            group.clear();
+            if (i % group_size - 1 == 0 && i != 0) || i == points.len() - 1 {
+                groups.push(group.clone());
+                group.clear();
+            }
         }
 
         let time1 = std::time::Instant::now();
-        let values = gsk.estimate::<SKVolumeSupportBuilder, MiniLUOKSystem>(&groups);
+        let values = gsk.estimate::<SKVolumeSupportBuilder, MiniLUOKSystem, NoTransfrom>(&groups);
         let time2 = std::time::Instant::now();
         println!("Time: {:?}", (time2 - time1).as_secs());
         println!(

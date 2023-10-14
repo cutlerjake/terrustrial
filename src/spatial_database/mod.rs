@@ -99,3 +99,40 @@ macro_rules! impl_spatial_database_for_grid {
 //         f64
 //     )
 // );
+
+pub trait DiscretiveVolume {
+    fn discretize(&self, dx: f32, dy: f32, dz: f32) -> Vec<Point3<f32>>;
+}
+
+impl DiscretiveVolume for Aabb {
+    fn discretize(&self, dx: f32, dy: f32, dz: f32) -> Vec<Point3<f32>> {
+        //ceil gaurantees that the resulting discretization will have dimensions upperbounded by dx, dy, dz
+        let nx = ((self.maxs.x - self.mins.x) / dx).ceil() as usize;
+        let ny = ((self.maxs.y - self.mins.y) / dy).ceil() as usize;
+        let nz = ((self.maxs.z - self.mins.z) / dz).ceil() as usize;
+
+        //step size in each direction
+        let step_x = (self.maxs.x - self.mins.x) / (nx as f32);
+        let step_y = (self.maxs.y - self.mins.y) / (ny as f32);
+        let step_z = (self.maxs.z - self.mins.z) / (nz as f32);
+
+        //contains the discretized points
+        let mut points = Vec::new();
+
+        let mut x = self.mins.x + step_x / 2.0;
+        while x <= self.maxs.x {
+            let mut y = self.mins.y + step_y / 2.0;
+            while y <= self.maxs.y {
+                let mut z = self.mins.z + step_z / 2.0;
+                while z <= self.maxs.z {
+                    points.push(Point3::new(x, y, z));
+                    z += step_z;
+                }
+                y += step_y;
+            }
+            x += step_x;
+        }
+
+        points
+    }
+}
