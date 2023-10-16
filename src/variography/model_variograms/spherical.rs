@@ -10,6 +10,7 @@ use super::VariogramModel;
 use simba::simd::SimdPartialOrd;
 use simba::simd::SimdValue;
 
+#[derive(Clone, Copy, Debug)]
 pub struct SphericalVariogram<T>
 where
     T: SimdValue<Element = f32> + Copy,

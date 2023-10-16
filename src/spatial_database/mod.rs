@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use itertools::izip;
 use nalgebra::Point3;
 use parry3d::bounding_volume::Aabb;
 
@@ -35,6 +36,147 @@ pub trait ConditioningProvider<G, T, P> {
     fn points(&self) -> &[Point3<f32>];
     fn data(&self) -> &[T];
     fn data_mut(&mut self) -> &mut [T];
+}
+pub struct MapConditioningProvider<'a, G, T, P, C, MAP>
+where
+    C: ConditioningProvider<G, T, P>,
+    MAP: Fn(&mut T),
+{
+    pub conditioning_provider: &'a mut C,
+    pub map: MAP,
+    phantom_g: std::marker::PhantomData<G>,
+    phantom_t: std::marker::PhantomData<T>,
+    phantom_p: std::marker::PhantomData<P>,
+}
+
+impl<'a, G, T, P, C, MAP> MapConditioningProvider<'a, G, T, P, C, MAP>
+where
+    C: ConditioningProvider<G, T, P>,
+    MAP: Fn(&mut T),
+{
+    pub fn new(conditioning_provider: &'a mut C, map: MAP) -> Self {
+        Self {
+            conditioning_provider,
+            map,
+            phantom_g: std::marker::PhantomData,
+            phantom_t: std::marker::PhantomData,
+            phantom_p: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<'a, G, T, P, C, MAP> ConditioningProvider<G, T, P>
+    for MapConditioningProvider<'a, G, T, P, C, MAP>
+where
+    C: ConditioningProvider<G, T, P>,
+    MAP: Fn(&mut T),
+{
+    type Shape = C::Shape;
+
+    fn query(
+        &self,
+        point: &Point3<f32>,
+        ellipsoid: &G,
+        params: &P,
+    ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>) {
+        let (mut inds, mut data, mut shapes) =
+            self.conditioning_provider.query(point, ellipsoid, params);
+
+        data.iter_mut().for_each(|x| (self.map)(x));
+
+        (inds, data, shapes)
+    }
+
+    fn points(&self) -> &[Point3<f32>] {
+        self.conditioning_provider.points()
+    }
+
+    fn data(&self) -> &[T] {
+        self.conditioning_provider.data()
+    }
+
+    fn data_mut(&mut self) -> &mut [T] {
+        self.conditioning_provider.data_mut()
+    }
+}
+
+pub struct FilerterMapConditioningProvider<'a, G, T, P, C, FILT, MAP>
+where
+    C: ConditioningProvider<G, T, P>,
+    FILT: Fn(&T) -> bool,
+    MAP: Fn(&mut T),
+{
+    pub conditioning_provider: &'a mut C,
+    pub filter: FILT,
+    pub map: MAP,
+    phantom_g: std::marker::PhantomData<G>,
+    phantom_t: std::marker::PhantomData<T>,
+    phantom_p: std::marker::PhantomData<P>,
+}
+
+impl<'a, G, T, P, C, FILT, MAP> FilerterMapConditioningProvider<'a, G, T, P, C, FILT, MAP>
+where
+    C: ConditioningProvider<G, T, P>,
+    FILT: Fn(&T) -> bool,
+    MAP: Fn(&mut T),
+{
+    pub fn new(conditioning_provider: &'a mut C, filter: FILT, map: MAP) -> Self {
+        Self {
+            conditioning_provider,
+            filter,
+            map,
+            phantom_g: std::marker::PhantomData,
+            phantom_t: std::marker::PhantomData,
+            phantom_p: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<'a, G, T, P, C, FILT, MAP> ConditioningProvider<G, T, P>
+    for FilerterMapConditioningProvider<'a, G, T, P, C, FILT, MAP>
+where
+    C: ConditioningProvider<G, T, P>,
+    FILT: Fn(&T) -> bool,
+    MAP: Fn(&mut T),
+{
+    type Shape = C::Shape;
+
+    fn query(
+        &self,
+        point: &Point3<f32>,
+        ellipsoid: &G,
+        params: &P,
+    ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>) {
+        let (mut inds, mut data, mut shapes) =
+            self.conditioning_provider.query(point, ellipsoid, params);
+
+        let mask = data.iter().map(|x| (self.filter)(x)).collect::<Vec<_>>();
+
+        let mask = mask.iter();
+        let mut inds_mask = mask.clone();
+        inds.retain(|i| *inds_mask.next().unwrap());
+
+        let mut data_mask = mask.clone();
+        data.retain(|x| *data_mask.next().unwrap());
+        data.iter_mut().for_each(|x| (self.map)(x));
+
+        let mut shapes_mask = mask.clone();
+        shapes.retain(|x| *shapes_mask.next().unwrap());
+
+        (inds, data, shapes)
+    }
+
+    fn points(&self) -> &[Point3<f32>] {
+        self.conditioning_provider.points()
+    }
+
+    fn data(&self) -> &[T] {
+        self.conditioning_provider.data()
+    }
+
+    fn data_mut(&mut self) -> &mut [T] {
+        self.conditioning_provider.data_mut()
+    }
 }
 
 pub trait SpatialDataBase<T> {

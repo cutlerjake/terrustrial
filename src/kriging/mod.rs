@@ -11,6 +11,7 @@ use crate::{spatial_database::SpatialQueryable, variography::model_variograms::V
 
 use self::simple_kriging::SKBuilder;
 
+pub mod generalized_sequential_indicator_kriging;
 pub mod generalized_sequential_kriging;
 pub mod simple_kriging;
 

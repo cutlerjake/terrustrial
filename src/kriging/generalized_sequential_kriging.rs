@@ -16,33 +16,10 @@ use super::simple_kriging::SupportInterface;
 use super::simple_kriging::SupportTransform;
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
-pub trait ValueTransform<T> {
-    fn transform(value: T) -> T;
-}
-
-pub struct NoTransfrom;
-
-impl<T> ValueTransform<T> for NoTransfrom {
-    fn transform(value: T) -> T {
-        value
-    }
-}
-
-pub struct AverageTransfrom;
-
-impl ValueTransform<Vec<f32>> for AverageTransfrom {
-    fn transform(value: Vec<f32>) -> Vec<f32> {
-        let mut sum = 0.0;
-        for x in value.iter() {
-            sum += x;
-        }
-        vec![sum / (value.len() as f32)]
-    }
-}
-
+#[derive(Clone, Copy, Debug)]
 pub struct GSKParameters {
-    max_group_size: usize,
-    max_cond_data: usize,
+    pub max_group_size: usize,
+    pub max_cond_data: usize,
 }
 
 pub struct GSK<S, V, VT>
@@ -78,7 +55,7 @@ where
             phantom_v_type: std::marker::PhantomData,
         }
     }
-    pub fn estimate<SKB, MS, TF>(&self, groups: &Vec<Vec<SKB::Support>>) -> Vec<f32>
+    pub fn estimate<SKB, MS>(&self, groups: &Vec<Vec<SKB::Support>>) -> Vec<f32>
     where
         SKB: SKBuilder,
         S::Shape: SupportTransform<SKB::Support>,
@@ -87,7 +64,6 @@ where
         <SKB as SKBuilder>::Support: SupportInterface, // why do I need this the trait already requires this?!?!?
         SKB::Support: Sync,
         MS: MiniLUSystem,
-        TF: ValueTransform<Vec<f32>>,
     {
         let system = LUSystem::new(
             self.parameters.max_group_size,
@@ -130,7 +106,7 @@ where
 
                     mini_system.populate_cond_values_est(cond_values.as_slice());
 
-                    TF::transform(mini_system.estimate())
+                    mini_system.estimate()
                 },
             )
             .flatten()
@@ -147,7 +123,9 @@ mod test {
     use simba::simd::WideF32x8;
 
     use crate::{
-        decomposition::lu::{MiniLUOKSystem, MiniLUSKSystem},
+        decomposition::lu::{
+            AverageTransfrom, MiniLUOKSystem, MiniLUSKSystem, ModifiedMiniLUSystem,
+        },
         kriging::simple_kriging::{SKPointSupportBuilder, SKVolumeSupportBuilder},
         spatial_database::{
             coordinate_system::CoordinateSystem, rtree_point_set::point_set::PointSet,
@@ -216,25 +194,11 @@ mod test {
             );
 
             groups.push(aabb.discretize(2f32, 2f32, 2f32));
-            // for x in 0..5 {
-            //     for y in 0..5 {
-            //         for z in 0..10 {
-            //             group.push(Point3::new(
-            //                 point.x + x as f32,
-            //                 point.y + y as f32,
-            //                 point.z + z as f32,
-            //             ));
-            //         }
-            //     }
-            // }
-
-            // groups.push(group.clone());
-            // group.clear();
         }
 
         let time1 = std::time::Instant::now();
         let values =
-            gsk.estimate::<SKPointSupportBuilder, MiniLUOKSystem, AverageTransfrom>(&groups);
+            gsk.estimate::<SKPointSupportBuilder, ModifiedMiniLUSystem<MiniLUOKSystem, AverageTransfrom>>(&groups);
         let time2 = std::time::Instant::now();
         println!("Time: {:?}", (time2 - time1).as_secs());
         println!(
@@ -360,7 +324,7 @@ mod test {
 
         let time1 = std::time::Instant::now();
         let values =
-            gsk.estimate::<SKPointSupportBuilder, MiniLUSKSystem, AverageTransfrom>(&groups);
+            gsk.estimate::<SKPointSupportBuilder, ModifiedMiniLUSystem<MiniLUSKSystem, AverageTransfrom>>(&groups);
         let time2 = std::time::Instant::now();
         println!("Time: {:?}", (time2 - time1).as_secs());
         println!(
@@ -490,7 +454,7 @@ mod test {
         }
 
         let time1 = std::time::Instant::now();
-        let values = gsk.estimate::<SKVolumeSupportBuilder, MiniLUOKSystem, NoTransfrom>(&groups);
+        let values = gsk.estimate::<SKVolumeSupportBuilder, MiniLUOKSystem>(&groups);
         let time2 = std::time::Instant::now();
         println!("Time: {:?}", (time2 - time1).as_secs());
         println!(

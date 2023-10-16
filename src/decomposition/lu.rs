@@ -104,26 +104,19 @@ impl LUSystem {
 
     #[inline(always)]
     fn compute_intermediate_mat(&mut self) {
-        //TODO: These are disjoint views of the same matrix, can we avoid copying?
-        let mut intermediate = self
-            .l_mat
-            .as_ref()
-            .submatrix(self.n_cond, 0, self.n_sim, self.n_cond)
-            .transpose()
-            .to_owned();
+        let [l_dd, _, l_gd, _] = self.l_mat.as_mut().split_at(self.n_cond, self.n_cond);
+
+        let mut l_gd_t = l_gd.transpose();
 
         //Want to compute L_gd @ L_dd^-1
         //avoid inverting L_dd by solving L_dd^T * intermediate^T = L_dg^T
         solve_upper_triangular_in_place(
-            self.l_mat
-                .as_ref()
-                .submatrix(0, 0, self.n_cond, self.n_cond)
-                .transpose(),
-            intermediate.as_mut(),
+            l_dd.as_ref().transpose(),
+            l_gd_t.as_mut(),
             Parallelism::None,
         );
 
-        self.intermediate_mat = intermediate.transpose().to_owned();
+        self.intermediate_mat = l_gd_t.transpose().to_owned();
     }
 
     #[inline(always)]
@@ -235,6 +228,63 @@ pub trait MiniLUSystem: for<'a> From<&'a mut LUSystem> {
     fn populate_cond_values_sim(&mut self, values: &[f32], rng: &mut StdRng);
     fn estimate(&self) -> Vec<f32>;
     fn simulate(&self) -> Vec<f32>;
+}
+
+pub trait ValueTransform<T> {
+    fn transform(value: T) -> T;
+}
+
+pub struct AverageTransfrom;
+
+impl ValueTransform<Vec<f32>> for AverageTransfrom {
+    fn transform(value: Vec<f32>) -> Vec<f32> {
+        let sum: f32 = value.iter().sum();
+        vec![sum / (value.len() as f32)]
+    }
+}
+
+pub struct ModifiedMiniLUSystem<MS, VT>
+where
+    MS: MiniLUSystem,
+    VT: ValueTransform<Vec<f32>>,
+{
+    system: MS,
+    modified: std::marker::PhantomData<VT>,
+}
+
+impl<MS, VT> MiniLUSystem for ModifiedMiniLUSystem<MS, VT>
+where
+    MS: MiniLUSystem,
+    VT: ValueTransform<Vec<f32>>,
+{
+    fn populate_cond_values_est(&mut self, values: &[f32]) {
+        self.system.populate_cond_values_est(values);
+    }
+
+    fn populate_cond_values_sim(&mut self, values: &[f32], rng: &mut StdRng) {
+        self.system.populate_cond_values_sim(values, rng)
+    }
+
+    fn estimate(&self) -> Vec<f32> {
+        VT::transform(self.system.estimate())
+    }
+
+    fn simulate(&self) -> Vec<f32> {
+        VT::transform(self.system.simulate())
+    }
+}
+
+impl<MS, VT> From<&mut LUSystem> for ModifiedMiniLUSystem<MS, VT>
+where
+    MS: MiniLUSystem + for<'a> From<&'a mut LUSystem>,
+    VT: ValueTransform<Vec<f32>>,
+{
+    fn from(lu: &mut LUSystem) -> Self {
+        Self {
+            system: MS::from(lu),
+            modified: std::marker::PhantomData::default(),
+        }
+    }
 }
 
 pub struct MiniLUSKSystem {
