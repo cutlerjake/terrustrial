@@ -6,6 +6,10 @@ use crate::spatial_database::ConditioningProvider;
 use crate::variography::model_variograms::VariogramModel;
 use indicatif::ParallelProgressIterator;
 use nalgebra::Point3;
+use rstar::primitives::GeomWithData;
+use rstar::RTree;
+use rstar::RTreeObject;
+use rstar::AABB;
 use simba::simd::SimdPartialOrd;
 use simba::simd::SimdRealField;
 use simba::simd::SimdValue;
@@ -112,6 +116,83 @@ where
             .flatten()
             .collect::<Vec<f32>>()
     }
+}
+
+pub fn optimize_groups(
+    points: &[Point3<f32>],
+    dx: f32,
+    dy: f32,
+    dz: f32,
+    gx: usize,
+    gy: usize,
+    gz: usize,
+) -> (Vec<Vec<Point3<f32>>>, Vec<Vec<usize>>) {
+    let mut target_point_tree = RTree::bulk_load(
+        points
+            .iter()
+            .enumerate()
+            .map(|(i, point)| GeomWithData::<[f32; 3], usize>::new([point.x, point.y, point.z], i))
+            .collect(),
+    );
+    let bounds = target_point_tree.root().envelope();
+
+    let group_size = [gx, gy, gz];
+    let env_size = [
+        group_size[0] as f32 * dx,
+        group_size[1] as f32 * dy,
+        group_size[2] as f32 * dz,
+    ];
+    let mut groups = Vec::new();
+    let mut inds = Vec::new();
+    let mut x = bounds.lower()[0];
+    while x <= bounds.upper()[0] {
+        let mut y = bounds.lower()[1];
+        while y <= bounds.upper()[1] {
+            let mut z = bounds.lower()[2];
+            while z <= bounds.upper()[2] {
+                let envelope = AABB::from_corners(
+                    [x, y, z].into(),
+                    [x + env_size[0], y + env_size[1], z + env_size[2]].into(),
+                );
+
+                let mut points = target_point_tree
+                    .drain_in_envelope_intersecting(envelope)
+                    .collect::<Vec<_>>();
+
+                //sort points by x, y, z
+                points.sort_by(|a, b| {
+                    a.envelope()
+                        .lower()
+                        .partial_cmp(&b.envelope().lower())
+                        .unwrap()
+                });
+
+                points
+                    .chunks(group_size.iter().product())
+                    .for_each(|chunk| {
+                        groups.push(
+                            chunk
+                                .iter()
+                                .map(|geom| {
+                                    Point3::new(
+                                        geom.envelope().lower()[0],
+                                        geom.envelope().lower()[1],
+                                        geom.envelope().lower()[2],
+                                    )
+                                })
+                                .collect::<Vec<_>>(),
+                        );
+
+                        inds.push(chunk.iter().map(|geom| geom.data).collect::<Vec<_>>());
+                    });
+
+                z += env_size[2];
+            }
+            y += env_size[1]
+        }
+        x += env_size[0]
+    }
+    (groups, inds)
 }
 
 #[cfg(test)]
@@ -528,9 +609,9 @@ mod test {
 
         let vgram_rot = UnitQuaternion::identity();
         let range = Vector3::new(
-            WideF32x8::splat(200.0),
-            WideF32x8::splat(200.0),
-            WideF32x8::splat(200.0),
+            WideF32x8::splat(400.0),
+            WideF32x8::splat(400.0),
+            WideF32x8::splat(400.0),
         );
         let sill = WideF32x8::splat(1.0f32);
         let nugget = WideF32x8::splat(0.2);
@@ -539,9 +620,9 @@ mod test {
 
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(
-            200f32,
-            200f32,
-            200f32,
+            400f32,
+            400f32,
+            400f32,
             CoordinateSystem::new(Translation3::new(0.0, 0.0, 0.0), UnitQuaternion::identity()),
         );
 
@@ -549,7 +630,7 @@ mod test {
         let group_size = 125;
         let parameters = GSKParameters {
             max_group_size: group_size,
-            max_cond_data: 100,
+            max_cond_data: 25,
         };
         let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
 
@@ -580,71 +661,11 @@ mod test {
             .iter()
             .map(|x| x.discretize(dx, dy, dz))
             .flatten()
-            .enumerate()
-            .map(|(i, p)| GeomWithData::<[f32; 3], usize>::new([p.x, p.y, p.z], i))
             .collect::<Vec<_>>();
 
-        println!("Building RTree");
-        let mut target_point_tree = RTree::bulk_load(points);
-        let bounds = target_point_tree.root().envelope();
+        println!("Optimizing groups");
 
-        let group_size = [5, 5, 5];
-        let env_size = [
-            group_size[0] as f32 * dx,
-            group_size[1] as f32 * dy,
-            group_size[2] as f32 * dz,
-        ];
-
-        println!("Building Groups");
-        let mut groups = Vec::new();
-        let mut x = bounds.lower()[0];
-        while x <= bounds.upper()[0] {
-            println!("x: {}", x);
-            let mut y = bounds.lower()[1];
-            while y <= bounds.upper()[1] {
-                let mut z = bounds.lower()[2];
-                while z <= bounds.upper()[2] {
-                    let envelope = AABB::from_corners(
-                        [x, y, z].into(),
-                        [x + env_size[0], y + env_size[1], z + env_size[2]].into(),
-                    );
-
-                    let mut points = target_point_tree
-                        .drain_in_envelope_intersecting(envelope)
-                        .collect::<Vec<_>>();
-
-                    if points.len() > group_size.iter().product() {
-                        //sort points by x, y, z
-                        points.sort_by(|a, b| {
-                            a.envelope()
-                                .lower()
-                                .partial_cmp(&b.envelope().lower())
-                                .unwrap()
-                        });
-
-                        points
-                            .chunks(group_size.iter().product())
-                            .for_each(|chunk| {
-                                groups.push(
-                                    chunk
-                                        .iter()
-                                        .map(|geom| {
-                                            Point3::new(
-                                                geom.envelope().lower()[0],
-                                                geom.envelope().lower()[1],
-                                                geom.envelope().lower()[2],
-                                            )
-                                        })
-                                        .collect::<Vec<_>>(),
-                                )
-                            });
-                    }
-                    z += env_size[2];
-                }
-                y += env_size[1]
-            }
-            x += env_size[0]
-        }
+        let (groups, point_inds) = optimize_groups(points.as_slice(), dx, dy, dz, 5, 5, 5);
 
         let time1 = std::time::Instant::now();
         let values = gsk.estimate::<SKPointSupportBuilder, MiniLUOKSystem>(&groups);
