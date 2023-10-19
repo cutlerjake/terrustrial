@@ -120,6 +120,7 @@ mod test {
 
     use nalgebra::{Translation3, UnitQuaternion, Vector3};
     use parry3d::bounding_volume::Aabb;
+    use rstar::{primitives::GeomWithData, RTree, RTreeObject, AABB};
     use simba::simd::WideF32x8;
 
     use crate::{
@@ -508,5 +509,192 @@ mod test {
                 .as_bytes(),
             );
         }
+    }
+
+    #[test]
+    fn gsk_large_model() {
+        // create a gridded database from a csv file (walker lake)
+        println!("Reading Cond Data");
+        let cond = PointSet::from_csv_index(
+            "C:\\GitRepos\\terrustrial\\data\\point_set.csv",
+            "X",
+            "Y",
+            "Z",
+            "Value",
+        )
+        .expect("Failed to create gdb");
+
+        //
+
+        let vgram_rot = UnitQuaternion::identity();
+        let range = Vector3::new(
+            WideF32x8::splat(200.0),
+            WideF32x8::splat(200.0),
+            WideF32x8::splat(200.0),
+        );
+        let sill = WideF32x8::splat(1.0f32);
+        let nugget = WideF32x8::splat(0.2);
+
+        let spherical_vgram = SphericalVariogram::new(range, sill, nugget, vgram_rot);
+
+        // create search ellipsoid
+        let search_ellipsoid = Ellipsoid::new(
+            200f32,
+            200f32,
+            200f32,
+            CoordinateSystem::new(Translation3::new(0.0, 0.0, 0.0), UnitQuaternion::identity()),
+        );
+
+        // create a gsk system
+        let group_size = 125;
+        let parameters = GSKParameters {
+            max_group_size: group_size,
+            max_cond_data: 100,
+        };
+        let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
+
+        println!("Reading Target Data");
+        let mut reader =
+            csv::Reader::from_path("C:\\GitRepos\\terrustrial\\data\\new_model.csv").unwrap();
+
+        let mut aabbs = Vec::new();
+        for record in reader.deserialize() {
+            let record: (f32, f32, f32, f32, f32, f32, f32) = record.unwrap();
+            aabbs.push(Aabb::new(
+                Point3::new(record.0, record.1, record.2),
+                Point3::new(
+                    record.0 + record.3,
+                    record.1 + record.4,
+                    record.2 + record.5,
+                ),
+            ));
+        }
+
+        println!("Discretizing");
+        //discretize each block
+        let dx = 2f32;
+        let dy = 2f32;
+        let dz = 2f32;
+
+        let points = aabbs
+            .iter()
+            .map(|x| x.discretize(dx, dy, dz))
+            .flatten()
+            .enumerate()
+            .map(|(i, p)| GeomWithData::<[f32; 3], usize>::new([p.x, p.y, p.z], i))
+            .collect::<Vec<_>>();
+
+        println!("Building RTree");
+        let mut target_point_tree = RTree::bulk_load(points);
+        let bounds = target_point_tree.root().envelope();
+
+        let group_size = [5, 5, 5];
+        let env_size = [
+            group_size[0] as f32 * dx,
+            group_size[1] as f32 * dy,
+            group_size[2] as f32 * dz,
+        ];
+
+        println!("Building Groups");
+        let mut groups = Vec::new();
+        let mut x = bounds.lower()[0];
+        while x <= bounds.upper()[0] {
+            println!("x: {}", x);
+            let mut y = bounds.lower()[1];
+            while y <= bounds.upper()[1] {
+                let mut z = bounds.lower()[2];
+                while z <= bounds.upper()[2] {
+                    let envelope = AABB::from_corners(
+                        [x, y, z].into(),
+                        [x + env_size[0], y + env_size[1], z + env_size[2]].into(),
+                    );
+
+                    let mut points = target_point_tree
+                        .drain_in_envelope_intersecting(envelope)
+                        .collect::<Vec<_>>();
+
+                    if points.len() > group_size.iter().product() {
+                        //sort points by x, y, z
+                        points.sort_by(|a, b| {
+                            a.envelope()
+                                .lower()
+                                .partial_cmp(&b.envelope().lower())
+                                .unwrap()
+                        });
+
+                        points
+                            .chunks(group_size.iter().product())
+                            .for_each(|chunk| {
+                                groups.push(
+                                    chunk
+                                        .iter()
+                                        .map(|geom| {
+                                            Point3::new(
+                                                geom.envelope().lower()[0],
+                                                geom.envelope().lower()[1],
+                                                geom.envelope().lower()[2],
+                                            )
+                                        })
+                                        .collect::<Vec<_>>(),
+                                )
+                            });
+                    }
+                    z += env_size[2];
+                }
+                y += env_size[1]
+            }
+            x += env_size[0]
+        }
+
+        let time1 = std::time::Instant::now();
+        let values = gsk.estimate::<SKPointSupportBuilder, MiniLUOKSystem>(&groups);
+        let time2 = std::time::Instant::now();
+        println!("Time: {:?}", (time2 - time1).as_secs());
+
+        //save values to file for visualization
+        let mut out = File::create("./test_results/gsk_large_model.txt").unwrap();
+        let _ = out.write_all(b"surfs\n");
+        let _ = out.write_all(b"4\n");
+        let _ = out.write_all(b"x\n");
+        let _ = out.write_all(b"y\n");
+        let _ = out.write_all(b"z\n");
+        let _ = out.write_all(b"value\n");
+
+        for (point, value) in groups.iter().flatten().zip(values.iter()) {
+            //println!("point: {:?}, value: {}", point, value);
+            let _ = out
+                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+        }
+
+        let mut out = File::create("./test_results/gsk_large_model_cond_data.txt").unwrap();
+        let _ = out.write_all(b"surfs\n");
+        let _ = out.write_all(b"4\n");
+        let _ = out.write_all(b"x\n");
+        let _ = out.write_all(b"y\n");
+        let _ = out.write_all(b"z\n");
+        let _ = out.write_all(b"value\n");
+
+        for (point, value) in cond.points.iter().zip(cond.data.iter()) {
+            //println!("point: {:?}, value: {}", point, value);
+            let _ = out
+                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+        }
+
+        // let mut out = File::create("./test_results/gsk_large_model.csv").unwrap();
+        // //write header
+        // let _ = out.write_all("X,Y,Z,XS,YS,ZS,V\n".as_bytes());
+
+        // //write each row
+
+        // for (point, value) in points.iter().zip(values.iter()) {
+        //     //println!("point: {:?}, value: {}", point, value);
+        //     let _ = out.write_all(
+        //         format!(
+        //             "{},{},{},{},{},{},{}\n",
+        //             point.x, point.y, point.z, 5, 5, 10, value
+        //         )
+        //         .as_bytes(),
+        //     );
+        // }
     }
 }

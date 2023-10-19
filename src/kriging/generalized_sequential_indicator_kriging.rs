@@ -249,8 +249,7 @@ mod test {
         }
 
         let time1 = std::time::Instant::now();
-        let values =
-            gsk.estimate::<SKPointSupportBuilder, ModifiedMiniLUSystem<MiniLUOKSystem, AverageTransfrom>>(&groups);
+        let values = gsk.estimate::<SKPointSupportBuilder, MiniLUOKSystem>(&groups);
         let time2 = std::time::Instant::now();
         println!("Time: {:?}", (time2 - time1).as_secs());
         println!(
