@@ -316,11 +316,15 @@ impl SKBuilder for SKVolumeSupportBuilder {
 }
 pub struct ConditioningParams {
     pub max_n_cond: usize,
+    pub min_conditioned_octants: usize,
 }
 
 impl ConditioningParams {
-    pub fn new(max_n_cond: usize) -> Self {
-        Self { max_n_cond }
+    pub fn new(max_n_cond: usize, min_conditioned_octants: usize) -> Self {
+        Self {
+            max_n_cond,
+            min_conditioned_octants,
+        }
     }
 }
 
@@ -682,7 +686,7 @@ where
                     //translate search ellipsoid to kriging point
                     ellipsoid.translate_to(kriging_point);
                     //get nearest points and values
-                    let (_, cond_values, cond_points) =
+                    let (_, cond_values, cond_points, res) =
                         self.conditioning_data
                             .query(kriging_point, &ellipsoid, &self.query_params);
 
@@ -865,7 +869,7 @@ mod tests {
             gdb.clone(),
             spherical_vgram,
             search_ellipsoid,
-            ConditioningParams::new(8),
+            ConditioningParams::new(8, 1),
             mean,
         );
 

@@ -214,6 +214,7 @@ mod test {
         let parameters = GSKParameters {
             max_group_size: 10,
             max_cond_data: 10,
+            min_conditioned_octants: 1,
         };
         let mut gsk = GSIK::new(
             cond.clone(),

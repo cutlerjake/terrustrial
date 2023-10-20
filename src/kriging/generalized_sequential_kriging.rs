@@ -24,6 +24,7 @@ use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 pub struct GSKParameters {
     pub max_group_size: usize,
     pub max_cond_data: usize,
+    pub min_conditioned_octants: usize,
 }
 
 pub struct GSK<S, V, VT>
@@ -74,7 +75,10 @@ where
             (self.parameters.max_cond_data) * 8,
         );
 
-        let cond_params = ConditioningParams::new(self.parameters.max_cond_data);
+        let cond_params = ConditioningParams::new(
+            self.parameters.max_cond_data,
+            self.parameters.min_conditioned_octants,
+        );
 
         groups
             .par_iter()
@@ -91,26 +95,30 @@ where
                     //translate search ellipsoid to group center
                     ellipsoid.translate_to(&center);
                     //get nearest points and values
-                    let (_, cond_values, cond_points) =
-                        self.conditioning_data
-                            .query(&center, &ellipsoid, &cond_params);
+                    let (_, cond_values, cond_points, sufficiently_conditioned) = self
+                        .conditioning_data
+                        .query(&center, &ellipsoid, &cond_params);
 
-                    //convert points to support
-                    let cond_points = cond_points
-                        .into_iter()
-                        .map(|x| x.transform())
-                        .collect::<Vec<_>>();
+                    if sufficiently_conditioned {
+                        //convert points to support
+                        let cond_points = cond_points
+                            .into_iter()
+                            .map(|x| x.transform())
+                            .collect::<Vec<_>>();
 
-                    //build kriging system for point
-                    let mut mini_system = local_system.create_mini_system::<V, VT, SKB, MS>(
-                        cond_points.as_slice(),
-                        group.as_slice(),
-                        &self.variogram_model,
-                    );
+                        //build kriging system for point
+                        let mut mini_system = local_system.create_mini_system::<V, VT, SKB, MS>(
+                            cond_points.as_slice(),
+                            group.as_slice(),
+                            &self.variogram_model,
+                        );
 
-                    mini_system.populate_cond_values_est(cond_values.as_slice());
+                        mini_system.populate_cond_values_est(cond_values.as_slice());
 
-                    mini_system.estimate()
+                        mini_system.estimate()
+                    } else {
+                        vec![f32::NAN; group.len()]
+                    }
                 },
             )
             .flatten()
@@ -207,6 +215,7 @@ mod test {
     use crate::{
         decomposition::lu::{
             AverageTransfrom, MiniLUOKSystem, MiniLUSKSystem, ModifiedMiniLUSystem,
+            NegativeFilteredMiniLUSystem,
         },
         kriging::simple_kriging::{SKPointSupportBuilder, SKVolumeSupportBuilder},
         spatial_database::{
@@ -248,8 +257,9 @@ mod test {
 
         // create a gsk system
         let parameters = GSKParameters {
-            max_group_size: 250,
-            max_cond_data: 100,
+            max_group_size: 125,
+            max_cond_data: 25,
+            min_conditioned_octants: 1,
         };
         let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
 
@@ -267,20 +277,30 @@ mod test {
 
         //map points in vec of group of points (64)
         //map points in vec of group of points (64)
-        let mut groups = Vec::new();
-        //let mut group = Vec::new();
-        for (i, point) in points.iter().enumerate() {
-            let aabb = Aabb::new(
-                Point3::new(point.x, point.y, point.z),
-                Point3::new(point.x + 5.0, point.y + 5.0, point.z + 10.0),
-            );
+        let mut block_inds = Vec::new();
+        let all_points = points
+            .iter()
+            .enumerate()
+            .map(|(i, point)| {
+                let aabb = Aabb::new(
+                    Point3::new(point.x, point.y, point.z),
+                    Point3::new(point.x + 5.0, point.y + 5.0, point.z + 10.0),
+                );
 
-            groups.push(aabb.discretize(2f32, 2f32, 2f32));
-        }
+                let disc_points = aabb.discretize(5f32, 5f32, 10f32);
+                block_inds.append(vec![i; disc_points.len()].as_mut());
+                disc_points
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+
+        let (groups, inds) = optimize_groups(all_points.as_slice(), 1f32, 1f32, 1f32, 5, 5, 5);
 
         let time1 = std::time::Instant::now();
-        let values =
-            gsk.estimate::<SKPointSupportBuilder, ModifiedMiniLUSystem<MiniLUOKSystem, AverageTransfrom>>(&groups);
+        let values = gsk
+            .estimate::<SKPointSupportBuilder, NegativeFilteredMiniLUSystem<MiniLUOKSystem>>(
+                &groups,
+            );
         let time2 = std::time::Instant::now();
         println!("Time: {:?}", (time2 - time1).as_secs());
         println!(
@@ -288,6 +308,18 @@ mod test {
             values.len() as f32 / (time2 - time1).as_secs_f32() * 60.0
         );
 
+        let block_values = values.iter().zip(inds.iter().flatten()).fold(
+            vec![vec![]; points.len()],
+            |mut acc, (value, ind)| {
+                acc[block_inds[*ind]].push(*value);
+                acc
+            },
+        );
+
+        let avg_block_values = block_values
+            .iter()
+            .map(|x| x.iter().sum::<f32>() / x.len() as f32)
+            .collect::<Vec<_>>();
         //save values to file for visualization
 
         let mut out = File::create("./test_results/lu_ok.txt").unwrap();
@@ -298,7 +330,7 @@ mod test {
         let _ = out.write_all(b"z\n");
         let _ = out.write_all(b"value\n");
 
-        for (point, value) in points.iter().zip(values.iter()) {
+        for (point, value) in points.iter().zip(avg_block_values.iter()) {
             //println!("point: {:?}, value: {}", point, value);
             let _ = out
                 .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
@@ -324,7 +356,7 @@ mod test {
 
         //write each row
 
-        for (point, value) in points.iter().zip(values.iter()) {
+        for (point, value) in points.iter().zip(avg_block_values.iter()) {
             //println!("point: {:?}, value: {}", point, value);
             let _ = out.write_all(
                 format!(
@@ -369,6 +401,7 @@ mod test {
         let parameters = GSKParameters {
             max_group_size: 250,
             max_cond_data: 100,
+            min_conditioned_octants: 1,
         };
         let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
 
@@ -495,6 +528,7 @@ mod test {
         let parameters = GSKParameters {
             max_group_size: group_size,
             max_cond_data: 20,
+            min_conditioned_octants: 1,
         };
         let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
 
@@ -596,8 +630,8 @@ mod test {
     fn gsk_large_model() {
         // create a gridded database from a csv file (walker lake)
         println!("Reading Cond Data");
-        let cond = PointSet::from_csv_index(
-            "C:\\GitRepos\\terrustrial\\data\\point_set.csv",
+        let mut cond = PointSet::from_csv_index(
+            "C:\\GitRepos\\terrustrial\\data\\point_set_filtered.csv",
             "X",
             "Y",
             "Z",
@@ -605,6 +639,14 @@ mod test {
         )
         .expect("Failed to create gdb");
 
+        //clamp value between 0 and 10
+        cond.data.iter_mut().for_each(|x| {
+            if *x > 10.0 {
+                *x = 10.0;
+            } else if *x < 0.0 {
+                *x = 0.0;
+            }
+        });
         //
 
         let vgram_rot = UnitQuaternion::identity();
@@ -630,7 +672,8 @@ mod test {
         let group_size = 125;
         let parameters = GSKParameters {
             max_group_size: group_size,
-            max_cond_data: 25,
+            max_cond_data: 20,
+            min_conditioned_octants: 8,
         };
         let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
 
@@ -657,9 +700,15 @@ mod test {
         let dy = 2f32;
         let dz = 2f32;
 
+        let mut block_inds = Vec::new();
         let points = aabbs
             .iter()
-            .map(|x| x.discretize(dx, dy, dz))
+            .enumerate()
+            .map(|(i, x)| {
+                let disc_points = x.discretize(dx, dy, dz);
+                block_inds.append(vec![i; disc_points.len()].as_mut());
+                disc_points
+            })
             .flatten()
             .collect::<Vec<_>>();
 
@@ -668,9 +717,34 @@ mod test {
         let (groups, point_inds) = optimize_groups(points.as_slice(), dx, dy, dz, 5, 5, 5);
 
         let time1 = std::time::Instant::now();
-        let values = gsk.estimate::<SKPointSupportBuilder, MiniLUOKSystem>(&groups);
+        let mut values = gsk
+            .estimate::<SKPointSupportBuilder, NegativeFilteredMiniLUSystem<MiniLUOKSystem>>(
+                &groups,
+            );
         let time2 = std::time::Instant::now();
         println!("Time: {:?}", (time2 - time1).as_secs());
+        println!(
+            "Points per minute: {}",
+            values.len() as f32 / (time2 - time1).as_secs_f32() * 60.0
+        );
+
+        println!(
+            "non nan values: {}",
+            values.iter().filter(|x| !x.is_nan()).count()
+        );
+
+        let block_values = values.iter().zip(point_inds.iter().flatten()).fold(
+            vec![vec![]; aabbs.len()],
+            |mut acc, (value, ind)| {
+                acc[block_inds[*ind]].push(*value);
+                acc
+            },
+        );
+
+        let avg_block_values = block_values
+            .iter()
+            .map(|x| x.iter().sum::<f32>() / x.len() as f32)
+            .collect::<Vec<_>>();
 
         //save values to file for visualization
         let mut out = File::create("./test_results/gsk_large_model.txt").unwrap();
@@ -681,10 +755,16 @@ mod test {
         let _ = out.write_all(b"z\n");
         let _ = out.write_all(b"value\n");
 
-        for (point, value) in groups.iter().flatten().zip(values.iter()) {
+        for (point, value) in aabbs.iter().zip(avg_block_values.iter()) {
             //println!("point: {:?}, value: {}", point, value);
-            let _ = out
-                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+
+            let _ = out.write_all(
+                format!(
+                    "{} {} {} {}\n",
+                    point.mins.x, point.mins.y, point.mins.z, value
+                )
+                .as_bytes(),
+            );
         }
 
         let mut out = File::create("./test_results/gsk_large_model_cond_data.txt").unwrap();
@@ -701,21 +781,27 @@ mod test {
                 .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
         }
 
-        // let mut out = File::create("./test_results/gsk_large_model.csv").unwrap();
-        // //write header
-        // let _ = out.write_all("X,Y,Z,XS,YS,ZS,V\n".as_bytes());
+        let mut out = File::create("./test_results/gsk_large_model.csv").unwrap();
+        //write header
+        let _ = out.write_all("X,Y,Z,DX,DY,DZ,V\n".as_bytes());
 
-        // //write each row
+        //write each row
 
-        // for (point, value) in points.iter().zip(values.iter()) {
-        //     //println!("point: {:?}, value: {}", point, value);
-        //     let _ = out.write_all(
-        //         format!(
-        //             "{},{},{},{},{},{},{}\n",
-        //             point.x, point.y, point.z, 5, 5, 10, value
-        //         )
-        //         .as_bytes(),
-        //     );
-        // }
+        for (point, value) in aabbs.iter().zip(avg_block_values.iter()) {
+            //println!("point: {:?}, value: {}", point, value);
+            let _ = out.write_all(
+                format!(
+                    "{},{},{},{},{},{},{}\n",
+                    point.mins.x,
+                    point.mins.y,
+                    point.mins.z,
+                    point.maxs.x - point.mins.x,
+                    point.maxs.y - point.mins.y,
+                    point.maxs.z - point.mins.z,
+                    value
+                )
+                .as_bytes(),
+            );
+        }
     }
 }

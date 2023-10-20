@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use itertools::izip;
-use nalgebra::Point3;
+use nalgebra::{Point3, SimdValue, UnitQuaternion};
 use parry3d::bounding_volume::Aabb;
 
 use crate::geometry::ellipsoid::Ellipsoid;
@@ -31,7 +31,7 @@ pub trait ConditioningProvider<G, T, P> {
         point: &Point3<f32>,
         ellipsoid: &G,
         params: &P,
-    ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>);
+    ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>, bool);
 
     fn points(&self) -> &[Point3<f32>];
     fn data(&self) -> &[T];
@@ -78,13 +78,13 @@ where
         point: &Point3<f32>,
         ellipsoid: &G,
         params: &P,
-    ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>) {
-        let (mut inds, mut data, mut shapes) =
+    ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>, bool) {
+        let (mut inds, mut data, mut shapes, res) =
             self.conditioning_provider.query(point, ellipsoid, params);
 
         data.iter_mut().for_each(|x| (self.map)(x));
 
-        (inds, data, shapes)
+        (inds, data, shapes, res)
     }
 
     fn points(&self) -> &[Point3<f32>] {
@@ -146,8 +146,8 @@ where
         point: &Point3<f32>,
         ellipsoid: &G,
         params: &P,
-    ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>) {
-        let (mut inds, mut data, mut shapes) =
+    ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>, bool) {
+        let (mut inds, mut data, mut shapes, res) =
             self.conditioning_provider.query(point, ellipsoid, params);
 
         let mask = data.iter().map(|x| (self.filter)(x)).collect::<Vec<_>>();
@@ -163,7 +163,7 @@ where
         let mut shapes_mask = mask.clone();
         shapes.retain(|x| *shapes_mask.next().unwrap());
 
-        (inds, data, shapes)
+        (inds, data, shapes, res)
     }
 
     fn points(&self) -> &[Point3<f32>] {
@@ -241,6 +241,38 @@ macro_rules! impl_spatial_database_for_grid {
 //         f64
 //     )
 // );
+
+pub trait FromAzimuthDipRake {
+    fn from_azimuth_dip_rake(azimuth: f32, dip: f32, rake: f32) -> Self;
+}
+
+impl<T> FromAzimuthDipRake for UnitQuaternion<T>
+where
+    T: SimdValue<Element = f32> + Copy,
+{
+    fn from_azimuth_dip_rake(azimuth: f32, dip: f32, rake: f32) -> Self {
+        let azimuth = T::splat(azimuth);
+        let dip = T::splat(dip);
+        let rake = T::splat(rake);
+
+        // let cos_azimuth = azimuth.cos();
+        // let sin_azimuth = azimuth.sin();
+        // let cos_dip = dip.cos();
+        // let sin_dip = dip.sin();
+        // let cos_rake = rake.cos();
+        // let sin_rake = rake.sin();
+
+        // let x = cos_azimuth * cos_rake - sin_azimuth * sin_rake * sin_dip;
+        // let y = sin_azimuth * cos_rake + cos_azimuth * sin_rake * sin_dip;
+        // let z = sin_rake * cos_dip;
+
+        // let w = cos_azimuth * cos_rake + sin_azimuth * sin_rake * sin_dip;
+
+        // Self::from_quaternion(nalgebra::Quaternion::new(w, x, y, z))
+
+        todo!()
+    }
+}
 
 pub trait DiscretiveVolume {
     fn discretize(&self, dx: f32, dy: f32, dz: f32) -> Vec<Point3<f32>>;

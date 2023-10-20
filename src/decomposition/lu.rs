@@ -10,7 +10,7 @@ use faer_cholesky::llt::{
 
 use faer_core::{
     mul::{self, triangular::BlockStructure},
-    zipped, Conj, Mat, Parallelism,
+    zipped, Conj, Mat, MatMut, MatRef, Parallelism,
 };
 use faer_core::{
     solve::{solve_lower_triangular_in_place, solve_upper_triangular_in_place},
@@ -228,6 +228,9 @@ pub trait MiniLUSystem: for<'a> From<&'a mut LUSystem> {
     fn populate_cond_values_sim(&mut self, values: &[f32], rng: &mut StdRng);
     fn estimate(&self) -> Vec<f32>;
     fn simulate(&self) -> Vec<f32>;
+
+    fn weights(&self) -> MatRef<f32>;
+    fn weights_mut(&mut self) -> MatMut<f32>;
 }
 
 pub trait ValueTransform<T> {
@@ -271,6 +274,14 @@ where
 
     fn simulate(&self) -> Vec<f32> {
         VT::transform(self.system.simulate())
+    }
+
+    fn weights(&self) -> MatRef<f32> {
+        self.system.weights()
+    }
+
+    fn weights_mut(&mut self) -> MatMut<f32> {
+        self.system.weights_mut()
     }
 }
 
@@ -366,6 +377,14 @@ impl MiniLUSystem for MiniLUSKSystem {
 
         vals
     }
+
+    fn weights(&self) -> MatRef<f32> {
+        self.sk_weights.as_ref()
+    }
+
+    fn weights_mut(&mut self) -> MatMut<f32> {
+        self.sk_weights.as_mut()
+    }
 }
 
 impl From<&mut LUSystem> for MiniLUSKSystem {
@@ -441,6 +460,14 @@ impl MiniLUSystem for MiniLUOKSystem {
     fn simulate(&self) -> Vec<f32> {
         todo!()
     }
+
+    fn weights(&self) -> MatRef<f32> {
+        self.ok_weights.as_ref()
+    }
+
+    fn weights_mut(&mut self) -> MatMut<f32> {
+        self.ok_weights.as_mut()
+    }
 }
 
 impl From<&mut LUSystem> for MiniLUOKSystem {
@@ -514,6 +541,72 @@ impl From<&mut LUSystem> for MiniLUOKSystem {
             ok_weights: ok,
             w_vec: w,
         }
+    }
+}
+
+pub struct NegativeFilteredMiniLUSystem<T>
+where
+    T: MiniLUSystem,
+{
+    system: T,
+}
+
+impl<T> MiniLUSystem for NegativeFilteredMiniLUSystem<T>
+where
+    T: MiniLUSystem,
+{
+    fn populate_cond_values_est(&mut self, values: &[f32]) {
+        self.system.populate_cond_values_est(values);
+    }
+
+    fn populate_cond_values_sim(&mut self, values: &[f32], rng: &mut StdRng) {
+        self.system.populate_cond_values_sim(values, rng)
+    }
+
+    fn estimate(&self) -> Vec<f32> {
+        self.system.estimate()
+    }
+
+    fn simulate(&self) -> Vec<f32> {
+        self.system.simulate()
+    }
+
+    fn weights(&self) -> MatRef<f32> {
+        self.system.weights()
+    }
+
+    fn weights_mut(&mut self) -> MatMut<f32> {
+        self.system.weights_mut()
+    }
+}
+
+impl<T> From<&mut LUSystem> for NegativeFilteredMiniLUSystem<T>
+where
+    T: MiniLUSystem,
+{
+    fn from(lu: &mut LUSystem) -> Self {
+        let mut non_neg_sys = Self {
+            system: T::from(lu),
+        };
+
+        //set negative weights to zero
+        zipped!(non_neg_sys.weights_mut()).for_each(|mut v| {
+            if v.read() < 0.0 {
+                v.write(0.0);
+            }
+        });
+
+        //normalize weights so they sum to 1
+        for row in 0..non_neg_sys.weights().nrows() {
+            let mut sum = 0.0;
+            zipped!(non_neg_sys.weights_mut().row(row)).for_each(|v| sum += v.read());
+            if sum > 0.0 {
+                zipped!(non_neg_sys.weights_mut().row(row))
+                    .for_each(|mut v| v.write(v.read() / sum));
+            }
+        }
+
+        non_neg_sys
     }
 }
 

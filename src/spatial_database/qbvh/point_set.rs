@@ -116,7 +116,7 @@ where
         point: &Point3<f32>,
         ellipsoid: &Ellipsoid,
         params: &ConditioningParams,
-    ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>) {
+    ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>, bool) {
         let mut cond_points =
             ConditioningDataCollector::new(*point, ellipsoid, params.max_n_cond, &self);
 
@@ -131,7 +131,7 @@ where
         let points = cond_points.octant_points.into_iter().flatten().collect();
         let data = inds.iter().map(|ind| self.data[*ind].clone()).collect();
 
-        (inds, data, points)
+        (inds, data, points, true)
     }
 
     fn points(&self) -> &[Point3<f32>] {

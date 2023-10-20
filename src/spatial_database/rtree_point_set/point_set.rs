@@ -123,6 +123,7 @@ pub struct ConditioningDataCollector<'b> {
     pub octant_points: Vec<Vec<Point3<f32>>>,
     pub octant_inds: Vec<Vec<u32>>,
     pub full_octants: u8,
+    pub conditioned_octants: u8,
     pub stop: bool,
 }
 
@@ -135,6 +136,7 @@ impl<'b> ConditioningDataCollector<'b> {
             octant_points: vec![Vec::with_capacity(n_cond); 8],
             octant_inds: vec![Vec::with_capacity(n_cond); 8],
             full_octants: 0,
+            conditioned_octants: 0,
             stop: false,
         }
     }
@@ -168,6 +170,10 @@ impl<'b> ConditioningDataCollector<'b> {
         if points.len() < self.n_cond {
             points.push(point);
             inds.push(ind);
+
+            if points.len() == 1 {
+                self.conditioned_octants += 1;
+            }
             if points.len() == self.n_cond {
                 self.full_octants += 1;
                 if self.all_octants_full() {
@@ -188,7 +194,7 @@ where
         point: &Point3<f32>,
         ellipsoid: &Ellipsoid,
         params: &ConditioningParams,
-    ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>) {
+    ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>, bool) {
         let mut cond_points = ConditioningDataCollector::new(ellipsoid, params.max_n_cond);
 
         for (point, dist) in self
@@ -211,7 +217,9 @@ where
         let points = cond_points.octant_points.into_iter().flatten().collect();
         let data = inds.iter().map(|ind| self.data[*ind].clone()).collect();
 
-        (inds, data, points)
+        let res = cond_points.conditioned_octants >= params.min_conditioned_octants as u8;
+
+        (inds, data, points, res)
     }
 
     fn points(&self) -> &[Point3<f32>] {
@@ -385,10 +393,13 @@ mod tests {
 
         let ellipsoid = Ellipsoid::new(200f32, 200f32, 200f32, cs);
 
-        let (inds, data, mut c_points) = point_set.query(
+        let (inds, data, mut c_points, res) = point_set.query(
             &query_point,
             &ellipsoid,
-            &ConditioningParams { max_n_cond: 20 },
+            &ConditioningParams {
+                max_n_cond: 20,
+                min_conditioned_octants: 0,
+            },
         );
 
         let mut true_points = points.clone();
@@ -463,7 +474,10 @@ mod tests {
             black_box(point_set.query(
                 black_box(&query_point),
                 black_box(&ellipsoid),
-                black_box(&ConditioningParams { max_n_cond: 20 }),
+                black_box(&ConditioningParams {
+                    max_n_cond: 20,
+                    min_conditioned_octants: 0,
+                }),
             ));
         }
         println!(
