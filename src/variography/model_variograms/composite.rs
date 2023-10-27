@@ -61,17 +61,21 @@ where
 
 impl<T> VariogramModel<T> for CompositeVariogram<T>
 where
-    T: SimdValue<Element = f32> + SimdRealField + std::iter::Sum + Copy,
+    T: SimdValue<Element = f32> + SimdRealField + Copy,
 {
     fn c_0(&self) -> <T as SimdValue>::Element {
         self.variograms.iter().map(|v| v.c_0()).sum()
     }
 
     fn variogram(&self, h: nalgebra::Vector3<T>) -> T {
-        self.variograms.iter().map(|v| v.variogram(h)).sum()
+        self.variograms
+            .iter()
+            .fold(T::splat(0.0), |acc, v| acc + v.variogram(h))
     }
 
     fn covariogram(&self, h: nalgebra::Vector3<T>) -> T {
-        self.variograms.iter().map(|v| v.covariogram(h)).sum()
+        self.variograms
+            .iter()
+            .fold(T::splat(0.0), |acc, v| acc + v.covariogram(h))
     }
 }
