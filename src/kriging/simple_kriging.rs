@@ -88,6 +88,7 @@ impl SKBuilder for SKPointSupportBuilder {
         //compute lower triangle of cov matrix
         let mut last_insert_i = 0;
         let mut last_insert_j = 0;
+
         //let mut point = Point3::<T>::origin();
         let mut vec = Vector3::<T>::zeros();
         for (i, p1) in cond.clone().enumerate() {

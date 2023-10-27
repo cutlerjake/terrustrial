@@ -153,22 +153,31 @@ where
                 }
             });
         }
-        cpdfs.iter_mut().for_each(|e| e.correct());
+        //cpdfs.iter_mut().for_each(|e| e.correct());
         cpdfs
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::{fs::File, io::Write};
+    use std::{
+        collections::{HashMap, HashSet},
+        fs::File,
+        io::Write,
+    };
 
+    use itertools::Itertools;
     use nalgebra::{Translation3, UnitQuaternion, Vector3};
     use parry3d::bounding_volume::Aabb;
     use simba::simd::WideF32x8;
 
     use crate::{
-        decomposition::lu::{AverageTransfrom, MiniLUOKSystem, ModifiedMiniLUSystem},
-        kriging::simple_kriging::SKPointSupportBuilder,
+        decomposition::lu::{
+            AverageTransfrom, MiniLUOKSystem, ModifiedMiniLUSystem, NegativeFilteredMiniLUSystem,
+        },
+        kriging::{
+            generalized_sequential_kriging::optimize_groups, simple_kriging::SKPointSupportBuilder,
+        },
         spatial_database::{
             coordinate_system::CoordinateSystem, rtree_point_set::point_set::PointSet,
             DiscretiveVolume,
@@ -300,5 +309,250 @@ mod test {
             }
             let _ = out.write_all(b"\n");
         }
+    }
+
+    #[test]
+    fn gsik_gc_zones() {
+        // create a gridded database from a csv file (walker lake)
+        println!("Reading Cond Data");
+        // let cond = PointSet::from_csv_index("C:\\Users\\2jake\\OneDrive\\Desktop\\foresight\\whirlpool_geostats\\.dev-env\\config\\composited_drillholes.csv", "X", "Y", "Z", "LITH")
+        //     .expect("Failed to create gdb");
+
+        let mut reader =
+            csv::Reader::from_path("C:\\Users\\2jake\\OneDrive\\Desktop\\foresight\\whirlpool_geostats\\.dev-env\\config\\composited_drillholes_reduced.csv").unwrap();
+        //X	Y	Z	AU	Rock Unit	REGOLITH	LITH
+
+        let mut points = Vec::new();
+        let mut data = Vec::new();
+        for record in reader.deserialize() {
+            let record: (f32, f32, f32, f32, String, String, String) = record.unwrap();
+            points.push(Point3::new(record.0, record.1, record.2));
+            data.push(record.3);
+        }
+
+        // let mut ind_code = 0;
+        // let mut lith_codes = HashMap::new();
+        // let mut lith_codes_indexed = data.iter().for_each(|lith| {
+        //     if !lith_codes.contains_key(lith) {
+        //         lith_codes.insert(lith, ind_code);
+        //         ind_code += 1;
+        //     }
+        // });
+
+        // let ordered_lith = lith_codes
+        //     .keys()
+        //     .sorted()
+        //     .map(|lith| lith.to_owned().to_owned())
+        //     .collect::<Vec<_>>();
+
+        // let mapped_data = data
+        //     .iter()
+        //     .map(|lith| lith_codes[lith] as f32)
+        //     .collect::<Vec<f32>>();
+
+        let cond = PointSet::new(points, data);
+
+        let vgram_rot = UnitQuaternion::identity();
+        let range = Vector3::new(
+            WideF32x8::splat(10.0),
+            WideF32x8::splat(20.0),
+            WideF32x8::splat(10.0),
+        );
+        let sill = WideF32x8::splat(1.0f32);
+        let nugget = WideF32x8::splat(0.2);
+
+        let spherical_vgram = SphericalVariogram::new(range, sill, nugget, vgram_rot);
+
+        // create search ellipsoid
+        let search_ellipsoid = Ellipsoid::new(
+            50f32,
+            50f32,
+            50f32,
+            CoordinateSystem::new(Translation3::new(0.0, 0.0, 0.0), UnitQuaternion::identity()),
+        );
+
+        println!("Reading Target Data");
+        let mut reader =
+            csv::Reader::from_path("C:\\GitRepos\\terrustrial\\data\\new_model.csv").unwrap();
+
+        let mut aabbs = Vec::new();
+        for record in reader.deserialize() {
+            let record: (f32, f32, f32, f32, f32, f32, f32) = record.unwrap();
+            aabbs.push(Aabb::new(
+                Point3::new(record.0, record.1, record.2),
+                Point3::new(
+                    record.0 + record.3,
+                    record.1 + record.4,
+                    record.2 + record.5,
+                ),
+            ));
+        }
+
+        println!("Discretizing");
+        //discretize each block
+        let dx = 2f32;
+        let dy = 2f32;
+        let dz = 2f32;
+
+        let mut block_inds = Vec::new();
+        let points = aabbs
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                let disc_points = x.discretize(dx, dy, dz);
+                block_inds.append(vec![i; disc_points.len()].as_mut());
+                disc_points
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+
+        println!("Optimizing groups");
+        let (groups, point_inds) = optimize_groups(points.as_slice(), dx, dy, dz, 5, 5, 5);
+
+        //gsk parameters
+        let group_size = 125;
+        let parameters = GSKParameters {
+            max_group_size: group_size,
+            max_cond_data: 20,
+            min_conditioned_octants: 5,
+        };
+        let mut ind_value = HashMap::new();
+
+        let mut lith_codes = HashMap::new();
+        lith_codes.insert("0.5", 0.5);
+        lith_codes.insert("0.3", 0.3);
+        lith_codes.insert("0.0", 0.0);
+
+        for (lith, lith_code) in lith_codes {
+            let mut indicator_cond = cond.clone();
+            indicator_cond.data_mut().iter_mut().for_each(|v| {
+                if *v >= lith_code as f32 {
+                    *v = 1.0
+                } else {
+                    *v = 0.0
+                }
+            });
+
+            // create a gsk system
+            let mut gsk = GSK::new(
+                indicator_cond,
+                spherical_vgram,
+                search_ellipsoid.clone(),
+                parameters,
+            );
+
+            let values = gsk.estimate::<SKPointSupportBuilder, MiniLUOKSystem>(&groups);
+
+            let block_values = values.iter().zip(point_inds.iter().flatten()).fold(
+                vec![vec![]; aabbs.len()],
+                |mut acc, (value, ind)| {
+                    acc[block_inds[*ind]].push(*value);
+                    acc
+                },
+            );
+
+            let avg_block_values = block_values
+                .iter()
+                .map(|x| {
+                    x.iter()
+                        .map(|v| if v.is_nan() { 0.0 } else { *v })
+                        .sum::<f32>()
+                        / x.len() as f32
+                })
+                .collect::<Vec<_>>();
+
+            ind_value.insert(lith, avg_block_values);
+        }
+
+        //save values to file for visualization
+        //let mut out = File::create("./test_results/gsk_large_model.csv").unwrap();
+        let ordered_lith = vec!["0.0", "0.3", "0.5"];
+        //write header
+        let mut out_str = "X,Y,Z,DX,DY,DZ,".to_string();
+        out_str += ordered_lith.join(",").as_str();
+        out_str += "\n";
+
+        for (i, aabb) in aabbs.iter().enumerate() {
+            //println!("point: {:?}, value: {}", point, value);
+            out_str += format!(
+                "{},{},{},{},{},{}",
+                aabb.mins.x,
+                aabb.mins.y,
+                aabb.mins.z,
+                aabb.maxs.x - aabb.mins.x,
+                aabb.maxs.y - aabb.mins.y,
+                aabb.maxs.z - aabb.mins.z
+            )
+            .as_str();
+
+            // let mut row_data = vec!["0"; ordered_lith.len()];
+            // let max_ind = ordered_lith
+            //     .iter()
+            //     .map(|lith| ind_value[lith][i])
+            //     .enumerate()
+            //     .max_by(|(_, x), (_, y)| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal))
+            //     .map(|(i, _)| i);
+            for key in ordered_lith.iter() {
+                out_str += format!(",{}", ind_value[key][i]).as_str();
+            }
+            // row_data[max_ind.unwrap()] = "1";
+            // out_str += row_data.join(",").as_str();
+            out_str += "\n";
+        }
+        std::fs::write("./test_results/gsik_gc_zones.csv", out_str);
+        // let time1 = std::time::Instant::now();
+        // let values = gsk
+        //     .estimate::<SKPointSupportBuilder, NegativeFilteredMiniLUSystem<MiniLUOKSystem>>(
+        //         &groups,
+        //     );
+        // let time2 = std::time::Instant::now();
+        // println!("Time: {:?}", (time2 - time1).as_secs());
+        // println!(
+        //     "Points per minute: {}",
+        //     values.len() as f32 / (time2 - time1).as_secs_f32() * 60.0
+        // );
+
+        //save values to file for visualization
+
+        // let mut out = File::create("./test_results/lu_ik_ok.txt").unwrap();
+        // let _ = out.write_all(b"surfs\n");
+        // let _ = out.write_all(b"4\n");
+        // let _ = out.write_all(b"x\n");
+        // let _ = out.write_all(b"y\n");
+        // let _ = out.write_all(b"z\n");
+        // for theshold in thresholds.iter() {
+        //     let _ = out.write_all(format!("leq_{}\n", theshold).as_bytes());
+        // }
+
+        // for (point, value) in points.iter().zip(values.iter()) {
+        //     //println!("point: {:?}, value: {}", point, value);
+        //     let _ = out.write_all(format!("{} {} {}", point.x, point.y, point.z).as_bytes());
+        //     for v in value.p.iter() {
+        //         let _ = out.write_all(format!(" {}", v).as_bytes());
+        //     }
+        //     let _ = out.write_all(b"\n");
+        // }
+
+        // let mut out = File::create("./test_results/lu_ik_ok.csv").unwrap();
+        // //write header
+        // let _ = out.write_all("X,Y,Z,DX,DY,DZ".as_bytes());
+        // for theshold in thresholds.iter() {
+        //     let _ = out.write_all(format!(",leq_{}", theshold).as_bytes());
+        // }
+        // let _ = out.write_all(b"\n");
+
+        // //write each row
+
+        // for (point, value) in points.iter().zip(values.iter()) {
+        //     //println!("point: {:?}, value: {}", point, value);
+        //     let _ = out.write_all(
+        //         format!("{},{},{},{},{},{}", point.x, point.y, point.z, 5, 5, 10).as_bytes(),
+        //     );
+
+        //     for v in value.p.iter() {
+        //         let _ = out.write_all(format!(",{}", v).as_bytes());
+        //     }
+        //     let _ = out.write_all(b"\n");
+        // }
     }
 }

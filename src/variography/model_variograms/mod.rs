@@ -2,6 +2,7 @@ use nalgebra::{SimdRealField, SimdValue, Vector3};
 use num_traits::Float;
 use simba::simd::SimdPartialOrd;
 
+pub mod composite;
 pub mod spherical;
 
 pub trait VariogramModel<T>

@@ -1,4 +1,4 @@
-// #![feature(portable_simd)]
+pub mod declustering;
 pub mod decomposition;
 pub mod geometry;
 pub mod kriging;

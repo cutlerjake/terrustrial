@@ -673,7 +673,7 @@ mod test {
         let parameters = GSKParameters {
             max_group_size: group_size,
             max_cond_data: 20,
-            min_conditioned_octants: 8,
+            min_conditioned_octants: 5,
         };
         let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
 
@@ -717,10 +717,7 @@ mod test {
         let (groups, point_inds) = optimize_groups(points.as_slice(), dx, dy, dz, 5, 5, 5);
 
         let time1 = std::time::Instant::now();
-        let mut values = gsk
-            .estimate::<SKPointSupportBuilder, NegativeFilteredMiniLUSystem<MiniLUOKSystem>>(
-                &groups,
-            );
+        let mut values = gsk.estimate::<SKPointSupportBuilder, MiniLUOKSystem>(&groups);
         let time2 = std::time::Instant::now();
         println!("Time: {:?}", (time2 - time1).as_secs());
         println!(
