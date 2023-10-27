@@ -2,6 +2,7 @@ use nalgebra::{SimdRealField, SimdValue};
 
 use super::{spherical::SphericalVariogram, VariogramModel};
 
+#[derive(Clone, Debug)]
 pub enum VariogramType<T>
 where
     T: SimdValue<Element = f32> + Copy,
@@ -39,6 +40,7 @@ where
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct CompositeVariogram<T>
 where
     T: SimdValue<Element = f32> + Copy,
