@@ -13,6 +13,7 @@ use self::simple_kriging::SKBuilder;
 
 pub mod generalized_sequential_indicator_kriging;
 pub mod generalized_sequential_kriging;
+pub mod greedy_generalized_sequential_kriging;
 pub mod simple_kriging;
 
 pub trait KrigingSystem<V, T>: Clone

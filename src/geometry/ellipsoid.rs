@@ -2,6 +2,7 @@ use nalgebra::{Isometry3, UnitQuaternion, Vector3};
 use nalgebra::{Point3, SimdRealField};
 use num_traits::{Float, NumCast};
 use parry3d::bounding_volume::Aabb;
+use rand::Rng;
 use simba::scalar::{RealField, SubsetOf};
 use simba::simd::SimdPartialOrd;
 use simba::simd::SimdValue;
@@ -53,6 +54,21 @@ impl Ellipsoid {
         let z = point.z / self.c;
 
         (x * x + y * y + z * z) <= 1.0
+    }
+
+    //randomly rotate search ellipsoid
+    pub fn random_rotation(&self) -> Self {
+        let mut rng = rand::thread_rng();
+
+        let x = rng.gen_range(0.0..2.0 * std::f32::consts::PI);
+        let y = rng.gen_range(0.0..2.0 * std::f32::consts::PI);
+        let z = rng.gen_range(0.0..2.0 * std::f32::consts::PI);
+
+        let rot = UnitQuaternion::from_euler_angles(x, y, z);
+
+        let cs = CoordinateSystem::new(self.coordinate_system.origin().coords.into(), rot);
+
+        Self::new(self.a, self.b, self.c, cs)
     }
 }
 
