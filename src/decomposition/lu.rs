@@ -76,7 +76,7 @@ impl LUSystem {
         let l_points = cond_points.into_iter().chain(sim_points.into_iter());
 
         SKB::build_cov_mat(&mut self.l_mat, l_points, vgram);
-        println!("cov_mat: {:?}", self.l_mat);
+        //println!("cov_mat: {:?}", self.l_mat);
 
         //create dynstacks
         //let mut cholesky_compute_stack = DynStack::new(&mut self.cholesky_compute_mem);
