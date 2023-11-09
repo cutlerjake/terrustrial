@@ -268,57 +268,6 @@ impl RotationAxis {
     }
 }
 
-// pub enum AxisAngles {
-//     ZYZ,
-// }
-
-// impl AxisAngles {
-//     pub fn from_str(s: &str) -> Self {
-//         match s {
-//             "ZYZ" => Self::ZYZ,
-//             _ => panic!("Invalid axis angle string"),
-//         }
-//     }
-
-//     pub fn to_str(&self) -> &str {
-//         match self {
-//             Self::ZYZ => "ZYZ",
-//         }
-//     }
-
-//     pub fn to_rotation_matrix<T>(&self, angles: [T; 3]) -> Matrix3<T>
-//     where
-//         T: SimdValue + SimdRealField + Copy + ComplexField,
-//     {
-//         match self {
-//             Self::ZYZ => {
-//                 let (alpha, beta, gamma) = (angles[0], angles[1], angles[2]);
-
-//                 let cos_alpha = alpha.cos();
-//                 let sin_alpha = alpha.sin();
-//                 let cos_beta = beta.cos();
-//                 let sin_beta = beta.sin();
-//                 let cos_gamma = gamma.cos();
-//                 let sin_gamma = gamma.sin();
-
-//                 let m11 = cos_alpha * cos_beta * cos_gamma - sin_alpha * sin_gamma;
-//                 let m12 = -cos_alpha * cos_beta * cos_gamma + sin_alpha * sin_gamma;
-//                 let m13 = cos_alpha * sin_beta;
-
-//                 let m21 = sin_alpha * cos_beta * cos_gamma + cos_alpha * sin_gamma;
-//                 let m22 = -sin_alpha * cos_beta * cos_gamma + cos_alpha * cos_gamma;
-//                 let m23 = sin_alpha * sin_beta;
-
-//                 let m31 = -sin_beta * cos_gamma;
-//                 let m32 = sin_beta * sin_gamma;
-//                 let m33 = cos_beta;
-
-//                 Matrix3::new(m11, m12, m13, m21, m22, m23, m31, m32, m33)
-//             }
-//         }
-//     }
-// }
-
 pub trait FromAxisAngles
 where
     Self: Sized,
@@ -351,48 +300,6 @@ where
                 }
             })
             .fold(UnitQuaternion::identity(), |acc, x| acc * x)
-
-        // let rotation_matrix = axis_angles.to_rotation_matrix(angles);
-
-        // let temp = UnitQuaternion::from_matrix(&rotation_matrix);
-        // let Some((axis, angle)) = temp.axis_angle() else {
-        //     return None;
-        // };
-        // let axis_t = Unit::new_normalize(axis.map(|x| T::splat(x)));
-        // let angle_t = T::splat(angle);
-        // Some(UnitQuaternion::from_axis_angle(&axis_t, angle_t))
-    }
-}
-
-pub trait FromAzimuthDipRake {
-    fn from_azimuth_dip_rake(azimuth: f32, dip: f32, rake: f32) -> Self;
-}
-
-impl<T> FromAzimuthDipRake for UnitQuaternion<T>
-where
-    T: SimdValue<Element = f32> + Copy,
-{
-    fn from_azimuth_dip_rake(azimuth: f32, dip: f32, rake: f32) -> Self {
-        let azimuth = T::splat(azimuth);
-        let dip = T::splat(dip);
-        let rake = T::splat(rake);
-
-        // let cos_azimuth = azimuth.cos();
-        // let sin_azimuth = azimuth.sin();
-        // let cos_dip = dip.cos();
-        // let sin_dip = dip.sin();
-        // let cos_rake = rake.cos();
-        // let sin_rake = rake.sin();
-
-        // let x = cos_azimuth * cos_rake - sin_azimuth * sin_rake * sin_dip;
-        // let y = sin_azimuth * cos_rake + cos_azimuth * sin_rake * sin_dip;
-        // let z = sin_rake * cos_dip;
-
-        // let w = cos_azimuth * cos_rake + sin_azimuth * sin_rake * sin_dip;
-
-        // Self::from_quaternion(nalgebra::Quaternion::new(w, x, y, z))
-
-        todo!()
     }
 }
 
@@ -445,9 +352,9 @@ mod test {
         let angles = [0.0, 0.0, 0.0];
 
         let rotations = vec![
-            (RotationAxis::Z, 90.0.to_radians()),
-            (RotationAxis::Y, -90.0.to_radians()),
-            (RotationAxis::Z, 45.0.to_radians()),
+            (RotationAxis::Z, 10.0.to_radians()),
+            (RotationAxis::Y, -20.0.to_radians()),
+            (RotationAxis::Z, 30.0.to_radians()),
         ];
 
         let quat = UnitQuaternion::<f32>::from_axis_angles(rotations.as_slice());

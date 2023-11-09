@@ -24,13 +24,15 @@ where
 impl<T> SphericalVariogram<T>
 where
     T: SimdValue<Element = f32> + Copy,
+    T: SimdRealField,
+    T::Element: SimdRealField,
 {
     pub fn new(range: Vector3<T>, sill: T, nugget: T, rotation: UnitQuaternion<T>) -> Self {
         Self {
             range,
             sill,
             nugget,
-            rotation: rotation,
+            rotation: rotation.inverse(),
         }
     }
 }
@@ -84,10 +86,6 @@ mod test {
         let sill = 1.0;
         let nugget = 0.1;
         let range = 300.0;
-        let cs = CoordinateSystem::new(
-            Translation3::new(0.0f32, 0.0, 0.0),
-            UnitQuaternion::identity(),
-        );
 
         let vgram = SphericalVariogram::<f32>::new(
             Vector3::new(range, range, range),
