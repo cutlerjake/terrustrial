@@ -76,6 +76,7 @@ impl LUSystem {
         let l_points = cond_points.into_iter().chain(sim_points.into_iter());
 
         SKB::build_cov_mat(&mut self.l_mat, l_points, vgram);
+        println!("cov_mat: {:?}", self.l_mat);
 
         //create dynstacks
         //let mut cholesky_compute_stack = DynStack::new(&mut self.cholesky_compute_mem);
@@ -661,6 +662,37 @@ mod tests {
         );
         mini.populate_cond_values_sim(values.as_slice(), &mut rng);
         let vals = mini.simulate();
+        println!("{:?}", vals);
+    }
+
+    #[test]
+    fn test_lu_ok_weights() {
+        let mut lu = LUSystem::new(2, 3);
+        let cond_points = vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ];
+        let values = vec![0.0, 1.0, 2.0];
+        let sim_points = vec![Point3::new(1.0, 1.0, 1.0), Point3::new(0.0, 0.0, 1.0)];
+        let vgram_rot =
+            UnitQuaternion::from_euler_angles(0.0.to_radians(), 0.0.to_radians(), 0.0.to_radians());
+        let vgram_origin = Point3::new(0.0, 0.0, 0.0);
+        let range = Vector3::new(2.0, 2.0, 2.0);
+        let sill = 1.0;
+        let nugget = 0.1;
+
+        let vgram = SphericalVariogram::<f32>::new(range, sill, nugget, vgram_rot);
+        let mut rng = StdRng::seed_from_u64(0);
+
+        let mut rng = StdRng::seed_from_u64(0);
+        let mut mini = lu.create_mini_system::<_, _, SKPointSupportBuilder, MiniLUOKSystem>(
+            &cond_points,
+            &sim_points,
+            &vgram,
+        );
+        mini.populate_cond_values_sim(values.as_slice(), &mut rng);
+        let vals = mini.estimate();
         println!("{:?}", vals);
     }
 

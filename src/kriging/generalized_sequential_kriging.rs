@@ -651,9 +651,9 @@ mod test {
 
         let vgram_rot = UnitQuaternion::identity();
         let range = Vector3::new(
-            WideF32x8::splat(400.0),
-            WideF32x8::splat(400.0),
-            WideF32x8::splat(400.0),
+            WideF32x8::splat(40.0),
+            WideF32x8::splat(40.0),
+            WideF32x8::splat(40.0),
         );
         let sill = WideF32x8::splat(1.0f32);
         let nugget = WideF32x8::splat(0.2);
@@ -662,17 +662,17 @@ mod test {
 
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(
-            400f32,
-            400f32,
-            400f32,
+            40f32,
+            40f32,
+            40f32,
             CoordinateSystem::new(Translation3::new(0.0, 0.0, 0.0), UnitQuaternion::identity()),
         );
 
         // create a gsk system
-        let group_size = 125;
+        let group_size = 512;
         let parameters = GSKParameters {
             max_group_size: group_size,
-            max_cond_data: 20,
+            max_cond_data: 5,
             min_conditioned_octants: 5,
         };
         let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
@@ -696,9 +696,9 @@ mod test {
 
         println!("Discretizing");
         //discretize each block
-        let dx = 2f32;
-        let dy = 2f32;
-        let dz = 2f32;
+        let dx = 0.9f32;
+        let dy = 0.9f32;
+        let dz = 0.9f32;
 
         let mut block_inds = Vec::new();
         let points = aabbs
@@ -714,7 +714,7 @@ mod test {
 
         println!("Optimizing groups");
 
-        let (groups, point_inds) = optimize_groups(points.as_slice(), dx, dy, dz, 5, 5, 5);
+        let (groups, point_inds) = optimize_groups(points.as_slice(), dx, dy, dz, 8, 8, 8);
 
         let time1 = std::time::Instant::now();
         let mut values = gsk.estimate::<SKPointSupportBuilder, MiniLUOKSystem>(&groups);

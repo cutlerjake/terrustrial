@@ -2,7 +2,9 @@ use std::fmt::Debug;
 
 use itertools::izip;
 use mathru::elementary::Trigonometry;
-use nalgebra::{ComplexField, Matrix3, Point3, SimdRealField, SimdValue, Unit, UnitQuaternion};
+use nalgebra::{
+    ComplexField, Matrix3, Point3, SimdRealField, SimdValue, Unit, UnitQuaternion, Vector3,
+};
 use parry3d::bounding_volume::Aabb;
 use simba::scalar::SubsetOf;
 
@@ -244,78 +246,121 @@ macro_rules! impl_spatial_database_for_grid {
 //     )
 // );
 
-pub enum AxisAngles {
-    ZYZ,
+pub enum RoationType {
+    Extrinsic,
+    Intrinsic,
 }
 
-impl AxisAngles {
-    pub fn from_str(s: &str) -> Self {
-        match s {
-            "ZYZ" => Self::ZYZ,
-            _ => panic!("Invalid axis angle string"),
-        }
-    }
+pub enum RotationAxis {
+    X,
+    Y,
+    Z,
+}
 
-    pub fn to_str(&self) -> &str {
-        match self {
-            Self::ZYZ => "ZYZ",
-        }
-    }
-
-    pub fn to_rotation_matrix<T>(&self, angles: [T; 3]) -> Matrix3<T>
-    where
-        T: SimdValue + SimdRealField + Copy + ComplexField,
-    {
-        match self {
-            Self::ZYZ => {
-                let (alpha, beta, gamma) = (angles[0], angles[1], angles[2]);
-
-                let cos_alpha = alpha.cos();
-                let sin_alpha = alpha.sin();
-                let cos_beta = beta.cos();
-                let sin_beta = beta.sin();
-                let cos_gamma = gamma.cos();
-                let sin_gamma = gamma.sin();
-
-                let m11 = cos_alpha * cos_beta * cos_gamma - sin_alpha * sin_gamma;
-                let m12 = -cos_alpha * cos_beta * cos_gamma + sin_alpha * sin_gamma;
-                let m13 = cos_alpha * sin_beta;
-
-                let m21 = sin_alpha * cos_beta * cos_gamma + cos_alpha * sin_gamma;
-                let m22 = -sin_alpha * cos_beta * cos_gamma + cos_alpha * cos_gamma;
-                let m23 = sin_alpha * sin_beta;
-
-                let m31 = -sin_beta * cos_gamma;
-                let m32 = sin_beta * sin_gamma;
-                let m33 = cos_beta;
-
-                Matrix3::new(m11, m12, m13, m21, m22, m23, m31, m32, m33)
-            }
+impl RotationAxis {
+    pub fn from_char(c: char) -> Self {
+        match c {
+            'x' => Self::X,
+            'y' => Self::Y,
+            'z' => Self::Z,
+            _ => panic!("Invalid rotation axis"),
         }
     }
 }
+
+// pub enum AxisAngles {
+//     ZYZ,
+// }
+
+// impl AxisAngles {
+//     pub fn from_str(s: &str) -> Self {
+//         match s {
+//             "ZYZ" => Self::ZYZ,
+//             _ => panic!("Invalid axis angle string"),
+//         }
+//     }
+
+//     pub fn to_str(&self) -> &str {
+//         match self {
+//             Self::ZYZ => "ZYZ",
+//         }
+//     }
+
+//     pub fn to_rotation_matrix<T>(&self, angles: [T; 3]) -> Matrix3<T>
+//     where
+//         T: SimdValue + SimdRealField + Copy + ComplexField,
+//     {
+//         match self {
+//             Self::ZYZ => {
+//                 let (alpha, beta, gamma) = (angles[0], angles[1], angles[2]);
+
+//                 let cos_alpha = alpha.cos();
+//                 let sin_alpha = alpha.sin();
+//                 let cos_beta = beta.cos();
+//                 let sin_beta = beta.sin();
+//                 let cos_gamma = gamma.cos();
+//                 let sin_gamma = gamma.sin();
+
+//                 let m11 = cos_alpha * cos_beta * cos_gamma - sin_alpha * sin_gamma;
+//                 let m12 = -cos_alpha * cos_beta * cos_gamma + sin_alpha * sin_gamma;
+//                 let m13 = cos_alpha * sin_beta;
+
+//                 let m21 = sin_alpha * cos_beta * cos_gamma + cos_alpha * sin_gamma;
+//                 let m22 = -sin_alpha * cos_beta * cos_gamma + cos_alpha * cos_gamma;
+//                 let m23 = sin_alpha * sin_beta;
+
+//                 let m31 = -sin_beta * cos_gamma;
+//                 let m32 = sin_beta * sin_gamma;
+//                 let m33 = cos_beta;
+
+//                 Matrix3::new(m11, m12, m13, m21, m22, m23, m31, m32, m33)
+//             }
+//         }
+//     }
+// }
 
 pub trait FromAxisAngles
 where
     Self: Sized,
 {
-    fn from_axis_angles(axis_angles: AxisAngles, angles: [f32; 3]) -> Option<Self>;
+    fn from_axis_angles(rotations: &[(RotationAxis, f32)]) -> Self;
 }
 
 impl<T> FromAxisAngles for UnitQuaternion<T>
 where
     T: SimdValue<Element = f32> + SimdRealField + Copy,
 {
-    fn from_axis_angles(axis_angles: AxisAngles, angles: [f32; 3]) -> Option<Self> {
-        let rotation_matrix = axis_angles.to_rotation_matrix(angles);
+    fn from_axis_angles(rotations: &[(RotationAxis, f32)]) -> Self {
+        rotations
+            .iter()
+            .map(|(axis, ang)| match axis {
+                RotationAxis::X => {
+                    let axis = Vector3::x_axis();
+                    let angle = T::splat(*ang);
+                    UnitQuaternion::from_axis_angle(&axis, angle)
+                }
+                RotationAxis::Y => {
+                    let axis = Vector3::y_axis();
+                    let angle = T::splat(*ang);
+                    UnitQuaternion::from_axis_angle(&axis, angle)
+                }
+                RotationAxis::Z => {
+                    let axis = Vector3::z_axis();
+                    let angle = T::splat(*ang);
+                    UnitQuaternion::from_axis_angle(&axis, angle)
+                }
+            })
+            .fold(UnitQuaternion::identity(), |acc, x| acc * x)
 
-        let temp = UnitQuaternion::from_matrix(&rotation_matrix);
-        let Some((axis, angle)) = temp.axis_angle() else {
-            return None;
-        };
-        let axis_t = Unit::new_normalize(axis.map(|x| T::splat(x)));
-        let angle_t = T::splat(angle);
-        Some(UnitQuaternion::from_axis_angle(&axis_t, angle_t))
+        // let rotation_matrix = axis_angles.to_rotation_matrix(angles);
+
+        // let temp = UnitQuaternion::from_matrix(&rotation_matrix);
+        // let Some((axis, angle)) = temp.axis_angle() else {
+        //     return None;
+        // };
+        // let axis_t = Unit::new_normalize(axis.map(|x| T::splat(x)));
+        // let angle_t = T::splat(angle);
+        // Some(UnitQuaternion::from_axis_angle(&axis_t, angle_t))
     }
 }
 
@@ -390,7 +435,8 @@ impl DiscretiveVolume for Aabb {
 
 #[cfg(test)]
 mod test {
-    use simba::simd::WideF32x8;
+
+    use num_traits::real::Real;
 
     use super::*;
 
@@ -398,6 +444,17 @@ mod test {
     fn zyz() {
         let angles = [0.0, 0.0, 0.0];
 
-        let quat = UnitQuaternion::<WideF32x8>::from_axis_angles(AxisAngles::ZYZ, angles);
+        let rotations = vec![
+            (RotationAxis::Z, 90.0.to_radians()),
+            (RotationAxis::Y, -90.0.to_radians()),
+            (RotationAxis::Z, 45.0.to_radians()),
+        ];
+
+        let quat = UnitQuaternion::<f32>::from_axis_angles(rotations.as_slice());
+
+        let vec = Vector3::x_axis();
+
+        let vec = quat.transform_vector(&vec);
+        println!("{:?}", vec);
     }
 }
