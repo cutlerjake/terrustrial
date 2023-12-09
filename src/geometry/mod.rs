@@ -1,12 +1,7 @@
-use nalgebra::{Isometry3, Point3, RealField, SimdRealField};
-use num_traits::Float;
-use parry3d::bounding_volume::Aabb;
-use simba::{
-    scalar::{SubsetOf, SupersetOf},
-    simd::SimdValue,
-};
-
 use crate::spatial_database::coordinate_system::CoordinateSystem;
+use nalgebra::{Point3, SimdRealField};
+use parry3d::bounding_volume::Aabb;
+use simba::simd::SimdValue;
 
 pub mod ellipsoid;
 pub mod template;

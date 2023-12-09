@@ -5,7 +5,7 @@ use std::str::FromStr;
 use nalgebra::Point3;
 use parry3d::bounding_volume::Aabb;
 use rstar::primitives::GeomWithData;
-use rstar::{PointDistance, RTree, AABB};
+use rstar::{RTree, AABB};
 
 use crate::geometry::ellipsoid::Ellipsoid;
 use crate::kriging::simple_kriging::ConditioningParams;
@@ -60,7 +60,7 @@ where
             let z = record[z_col].parse::<f32>()?;
             let value = record[value_col].parse::<T>()?;
 
-            point_vec.push(Point3::new(x as f32, y as f32, z as f32));
+            point_vec.push(Point3::new(x, y, z));
 
             value_vec.push(value);
         }
@@ -90,7 +90,6 @@ where
         );
         self.tree
             .locate_in_envelope(&envelope)
-            .into_iter()
             .map(|geom| geom.data as usize)
             .collect()
     }
@@ -240,7 +239,6 @@ mod tests {
     use std::hint::black_box;
 
     use crate::spatial_database::coordinate_system::CoordinateSystem;
-    use crate::spatial_database::qbvh::n_best_first::NBestFirst;
 
     use super::*;
     use nalgebra::distance;
@@ -280,8 +278,6 @@ mod tests {
                 Point3::new(1000.0, 1000.0, 1000.0),
             ),
         );
-        let data = vec![0.0; n_points];
-        let point_set = PointSet::new(points.clone(), data);
         let query_point = Point3::new(500.0, 500.0, 500.0);
         let n_cond = 20;
 
@@ -393,7 +389,7 @@ mod tests {
 
         let ellipsoid = Ellipsoid::new(200f32, 200f32, 200f32, cs);
 
-        let (inds, data, mut c_points, res) = point_set.query(
+        let (_, _, mut c_points, _) = point_set.query(
             &query_point,
             &ellipsoid,
             &ConditioningParams {
@@ -454,7 +450,6 @@ mod tests {
 
         println!("Building point set");
         let point_set = PointSet::new(points.clone(), data);
-        let n_cond = 8;
         let mut rng = rand::thread_rng();
         println!("Starting speed test");
         let time = std::time::Instant::now();

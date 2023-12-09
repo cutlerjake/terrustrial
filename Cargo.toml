@@ -16,16 +16,16 @@ packed = ["simba", "simba/packed_simd"]
 
 [dependencies]
 approx = "0.5.1"
-faer = "0.11.0"
-faer-core = "0.11.0"
-faer-cholesky = "0.11.0"
+faer = "0.16.0"
+faer-core = "0.16.0"
+faer-cholesky = "0.16.0"
 nalgebra = { version = "0.32.3", features = ["std"] }
 ndarray = "0.15.6"
 num-traits = "0.2.15"
 parry3d = { version = "0.13.5", features = ["simd-stable"] }
 rand = "0.8.5"
 rstar = "0.11.0"
-dyn-stack = "0.9.0"
+dyn-stack = "0.10.0"
 # simba = { git = "https://github.com/dimforge/simba.git", branch = "master", features = [
 #     "packed_simd",
 # ] }
@@ -39,8 +39,10 @@ itertools = "0.11.0"
 rand_distr = "0.4.3"
 mathru = "0.15.2"
 parking_lot = "0.12.1"
-
-
+cudarc = "0.9.15"
+bytemuck = { version = "1.14.0", features = ["derive"] }
+bvh = { git = "https://github.com/svenstaro/bvh.git" }
+rmpfit = "0.3.0"
 #Fails to build with rust 1.73 due to packed_simd_2 dependency
 #simply updates dependency to packed_simd 0.3.9
 #subscribed to merge request on github, remove when merged

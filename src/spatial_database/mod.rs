@@ -1,16 +1,7 @@
 use std::fmt::Debug;
 
-use itertools::izip;
-use mathru::elementary::Trigonometry;
-use nalgebra::{
-    ComplexField, Matrix3, Point3, SimdRealField, SimdValue, Unit, UnitQuaternion, Vector3,
-};
+use nalgebra::{Point3, SimdRealField, SimdValue, UnitQuaternion, Vector3};
 use parry3d::bounding_volume::Aabb;
-use simba::scalar::SubsetOf;
-
-use crate::geometry::ellipsoid::Ellipsoid;
-
-use self::gridded_databases::GriddedDataBaseInterface;
 
 pub mod coordinate_system;
 pub mod gridded_databases;
@@ -83,7 +74,7 @@ where
         ellipsoid: &G,
         params: &P,
     ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>, bool) {
-        let (mut inds, mut data, mut shapes, res) =
+        let (inds, mut data, shapes, res) =
             self.conditioning_provider.query(point, ellipsoid, params);
 
         data.iter_mut().for_each(|x| (self.map)(x));
@@ -158,14 +149,14 @@ where
 
         let mask = mask.iter();
         let mut inds_mask = mask.clone();
-        inds.retain(|i| *inds_mask.next().unwrap());
+        inds.retain(|_| *inds_mask.next().unwrap());
 
         let mut data_mask = mask.clone();
-        data.retain(|x| *data_mask.next().unwrap());
+        data.retain(|_| *data_mask.next().unwrap());
         data.iter_mut().for_each(|x| (self.map)(x));
 
         let mut shapes_mask = mask.clone();
-        shapes.retain(|x| *shapes_mask.next().unwrap());
+        shapes.retain(|_| *shapes_mask.next().unwrap());
 
         (inds, data, shapes, res)
     }
@@ -193,39 +184,39 @@ pub trait SpatialDataBase<T> {
     fn set_data_at_ind(&mut self, ind: &Self::INDEX, data: T);
 }
 
-macro_rules! impl_spatial_database_for_grid {
-    ($( ($impl_type:ty, $data_type:ty) ),*) => {
-        $(
-            impl SpatialDataBase<$data_type> for $impl_type {
-                type INDEX = [usize; 3];
+//macro_rules! impl_spatial_database_for_grid {
+//($( ($impl_type:ty, $data_type:ty) ),*) => {
+//$(
+//impl SpatialDataBase<$data_type> for $impl_type {
+//type INDEX = [usize; 3];
 
-                fn inds_in_bounding_box(&self, bounding_box: &Aabb) -> Vec<Self::INDEX> {
-                    <Self as GriddedDataBaseInterface<$data_type>>::inds_in_bounding_box(self, bounding_box)
-                }
+//fn inds_in_bounding_box(&self, bounding_box: &Aabb) -> Vec<Self::INDEX> {
+//<Self as GriddedDataBaseInterface<$data_type>>::inds_in_bounding_box(self, bounding_box)
+//}
 
-                fn point_at_ind(&self, inds: &Self::INDEX) -> Point3<f32> {
-                    <Self as GriddedDataBaseInterface<$data_type>>::ind_to_point(self, &inds.map(|i| i as isize))
-                }
+//fn point_at_ind(&self, inds: &Self::INDEX) -> Point3<f32> {
+//<Self as GriddedDataBaseInterface<$data_type>>::ind_to_point(self, &inds.map(|i| i as isize))
+//}
 
-                fn data_at_ind(&self, ind: &Self::INDEX) -> Option<$data_type> {
-                    <Self as GriddedDataBaseInterface<$data_type>>::data_at_ind(self, ind)
-                }
+//fn data_at_ind(&self, ind: &Self::INDEX) -> Option<$data_type> {
+//<Self as GriddedDataBaseInterface<$data_type>>::data_at_ind(self, ind)
+//}
 
-                fn data_and_points(&self) -> (Vec<$data_type>, Vec<Point3<f32>>) {
-                    <Self as GriddedDataBaseInterface<$data_type>>::data_and_points(self)
-                }
+//fn data_and_points(&self) -> (Vec<$data_type>, Vec<Point3<f32>>) {
+//<Self as GriddedDataBaseInterface<$data_type>>::data_and_points(self)
+//}
 
-                fn data_and_inds(&self) -> (Vec<$data_type>, Vec<Self::INDEX>) {
-                    <Self as GriddedDataBaseInterface<$data_type>>::data_and_inds(self)
-                }
+//fn data_and_inds(&self) -> (Vec<$data_type>, Vec<Self::INDEX>) {
+//<Self as GriddedDataBaseInterface<$data_type>>::data_and_inds(self)
+//}
 
-                fn set_data_at_ind(&mut self, ind: &Self::INDEX, data: $data_type) {
-                    <Self as GriddedDataBaseInterface<$data_type>>::set_data_at_ind(self, ind, data)
-                }
-            }
-        )*
-    };
-}
+//fn set_data_at_ind(&mut self, ind: &Self::INDEX, data: $data_type) {
+//<Self as GriddedDataBaseInterface<$data_type>>::set_data_at_ind(self, ind, data)
+//}
+//}
+//)*
+//};
+//}
 
 // impl_spatial_database_for_grid!(
 //     (
@@ -349,8 +340,6 @@ mod test {
 
     #[test]
     fn zyz() {
-        let angles = [0.0, 0.0, 0.0];
-
         let rotations = vec![
             (RotationAxis::Z, 10.0.to_radians()),
             (RotationAxis::Y, -20.0.to_radians()),

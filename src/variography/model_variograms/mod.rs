@@ -1,8 +1,12 @@
-use nalgebra::{SimdRealField, SimdValue, Vector3};
-use num_traits::Float;
-use simba::simd::SimdPartialOrd;
+use nalgebra::{SimdValue, Vector3};
 
 pub mod composite;
+pub mod iso_exponential;
+pub mod iso_fitter;
+pub mod iso_gaussian;
+pub mod iso_nugget;
+pub mod iso_spherical;
+pub mod nugget;
 pub mod spherical;
 
 pub trait VariogramModel<T>

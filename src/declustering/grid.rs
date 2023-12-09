@@ -1,11 +1,7 @@
 use nalgebra::Point3;
 
-use crate::spatial_database::DiscretiveVolume;
-use parking_lot::RwLock;
 use parry3d::bounding_volume::Aabb;
-use rand::rngs::ThreadRng;
 use rand::Rng;
-use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
 use std::collections::HashMap;
@@ -97,21 +93,19 @@ impl GridDecluster {
                                         );
 
                                         //compute grid origin
-                                        let grid_index = [
+                                        [
                                             (shifted_point.x / cell_size[0]) as i32,
                                             (shifted_point.y / cell_size[1]) as i32,
                                             (shifted_point.z / cell_size[2]) as i32,
-                                        ];
-
-                                        grid_index
+                                        ]
                                     })
                                     .collect::<Vec<_>>();
 
                                 //group points by grid index
                                 let grid_groups = grid_inds.iter().zip(points.iter()).fold(
                                     HashMap::new(),
-                                    |mut map, (grid_index, point)| {
-                                        map.entry(grid_index).or_insert(Vec::new()).push(point);
+                                    |mut map: HashMap<&[i32; 3], Vec<_>>, (grid_index, point)| {
+                                        map.entry(grid_index).or_default().push(point);
                                         map
                                     },
                                 );
@@ -235,7 +229,5 @@ mod test {
         //     1.0,
         //     Some(0.1),
         // );
-
-        let weights = grid_decluster.decluster(&points, &values, DeclusterDirection::Minimize);
     }
 }

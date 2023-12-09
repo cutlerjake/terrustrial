@@ -97,7 +97,7 @@ where
                     //get nearest points and values
                     let (_, cond_values, cond_points, sufficiently_conditioned) = self
                         .conditioning_data
-                        .query(&center, &ellipsoid, &cond_params);
+                        .query(&center, ellipsoid, &cond_params);
 
                     if sufficiently_conditioned {
                         //convert points to support
@@ -159,8 +159,8 @@ pub fn optimize_groups(
             let mut z = bounds.lower()[2];
             while z <= bounds.upper()[2] {
                 let envelope = AABB::from_corners(
-                    [x, y, z].into(),
-                    [x + env_size[0], y + env_size[1], z + env_size[2]].into(),
+                    [x, y, z],
+                    [x + env_size[0], y + env_size[1], z + env_size[2]],
                 );
 
                 let mut points = target_point_tree
@@ -209,7 +209,6 @@ mod test {
 
     use nalgebra::{Translation3, UnitQuaternion, Vector3};
     use parry3d::bounding_volume::Aabb;
-    use rstar::{primitives::GeomWithData, RTree, RTreeObject, AABB};
     use simba::simd::WideF32x8;
 
     use crate::{
@@ -243,9 +242,8 @@ mod test {
             WideF32x8::splat(200.0),
         );
         let sill = WideF32x8::splat(1.0f32);
-        let nugget = WideF32x8::splat(0.2);
 
-        let spherical_vgram = SphericalVariogram::new(range, sill, nugget, vgram_rot);
+        let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
 
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(
@@ -385,9 +383,8 @@ mod test {
             WideF32x8::splat(200.0),
         );
         let sill = WideF32x8::splat(1.0f32);
-        let nugget = WideF32x8::splat(0.2);
 
-        let spherical_vgram = SphericalVariogram::new(range, sill, nugget, vgram_rot);
+        let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
 
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(
@@ -420,7 +417,7 @@ mod test {
         //map points in vec of group of points (64)
         let mut groups = Vec::new();
         let mut group = Vec::new();
-        for (i, point) in points.iter().enumerate() {
+        for (_, point) in points.iter().enumerate() {
             for x in 0..5 {
                 for y in 0..5 {
                     for z in 0..10 {
@@ -511,9 +508,8 @@ mod test {
             WideF32x8::splat(200.0),
         );
         let sill = WideF32x8::splat(1.0f32);
-        let nugget = WideF32x8::splat(0.2);
 
-        let spherical_vgram = SphericalVariogram::new(range, sill, nugget, vgram_rot);
+        let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
 
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(
@@ -656,9 +652,8 @@ mod test {
             WideF32x8::splat(40.0),
         );
         let sill = WideF32x8::splat(1.0f32);
-        let nugget = WideF32x8::splat(0.2);
 
-        let spherical_vgram = SphericalVariogram::new(range, sill, nugget, vgram_rot);
+        let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
 
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(
@@ -717,7 +712,7 @@ mod test {
         let (groups, point_inds) = optimize_groups(points.as_slice(), dx, dy, dz, 8, 8, 8);
 
         let time1 = std::time::Instant::now();
-        let mut values = gsk.estimate::<SKPointSupportBuilder, MiniLUOKSystem>(&groups);
+        let values = gsk.estimate::<SKPointSupportBuilder, MiniLUOKSystem>(&groups);
         let time2 = std::time::Instant::now();
         println!("Time: {:?}", (time2 - time1).as_secs());
         println!(

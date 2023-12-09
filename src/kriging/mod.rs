@@ -1,19 +1,14 @@
-use std::marker::PhantomData;
-
-use indicatif::ParallelProgressIterator;
 use nalgebra::Point3;
 use num_traits::Float;
-use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
-use simba::scalar::RealField;
 use simba::simd::{SimdPartialOrd, SimdRealField, SimdValue};
 
-use crate::{spatial_database::SpatialQueryable, variography::model_variograms::VariogramModel};
+use crate::variography::model_variograms::VariogramModel;
 
 use self::simple_kriging::SKBuilder;
 
 pub mod generalized_sequential_indicator_kriging;
 pub mod generalized_sequential_kriging;
-pub mod greedy_generalized_sequential_kriging;
+//pub mod greedy_generalized_sequential_kriging;
 pub mod simple_kriging;
 
 pub trait KrigingSystem<V, T>: Clone

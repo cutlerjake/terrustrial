@@ -1,13 +1,8 @@
 use nalgebra::SimdRealField;
 use nalgebra::UnitQuaternion;
 use nalgebra::Vector3;
-use num_traits::Float;
-use num_traits::NumCast;
-
-use crate::spatial_database::coordinate_system::CoordinateSystem;
 
 use super::VariogramModel;
-use simba::simd::SimdPartialOrd;
 use simba::simd::SimdValue;
 
 #[derive(Clone, Copy, Debug)]
@@ -15,10 +10,9 @@ pub struct SphericalVariogram<T>
 where
     T: SimdValue<Element = f32> + Copy,
 {
-    range: Vector3<T>,
-    sill: T,
-    nugget: T,
-    rotation: UnitQuaternion<T>,
+    pub range: Vector3<T>,
+    pub sill: T,
+    pub rotation: UnitQuaternion<T>,
 }
 
 impl<T> SphericalVariogram<T>
@@ -27,11 +21,10 @@ where
     T: SimdRealField,
     T::Element: SimdRealField,
 {
-    pub fn new(range: Vector3<T>, sill: T, nugget: T, rotation: UnitQuaternion<T>) -> Self {
+    pub fn new(range: Vector3<T>, sill: T, rotation: UnitQuaternion<T>) -> Self {
         Self {
             range,
             sill,
-            nugget,
             rotation: rotation.inverse(),
         }
     }
@@ -59,8 +52,7 @@ where
         let simd_0_5 = T::splat(0.5);
 
         //create simd variance
-        let mut simd_v = self.nugget
-            + (self.sill - self.nugget) * (simd_1_5 * iso_h - simd_0_5 * iso_h * iso_h * iso_h);
+        let mut simd_v = self.sill * (simd_1_5 * iso_h - simd_0_5 * iso_h * iso_h * iso_h);
 
         //set lanes of simd variance to 0 where lanes of iso_h == 0.0
         simd_v = simd_v.select(mask, T::splat(0.0));
@@ -78,19 +70,16 @@ where
 
 #[cfg(test)]
 mod test {
-    use nalgebra::Translation3;
 
     use super::*;
     #[test]
     fn spherical_vgram_var() {
         let sill = 1.0;
-        let nugget = 0.1;
         let range = 300.0;
 
         let vgram = SphericalVariogram::<f32>::new(
             Vector3::new(range, range, range),
             sill,
-            nugget,
             UnitQuaternion::identity(),
         );
 

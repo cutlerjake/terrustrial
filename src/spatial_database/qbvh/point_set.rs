@@ -1,8 +1,7 @@
 use itertools::Itertools;
 use nalgebra::Point3;
+use parry3d::bounding_volume::Aabb;
 use parry3d::partitioning::Qbvh;
-use parry3d::{bounding_volume::Aabb, query};
-use rstar::Point;
 use std::collections::HashMap;
 use std::error;
 use std::str::FromStr;
@@ -31,7 +30,7 @@ impl<T> PointSet<T> {
             points
                 .iter()
                 .enumerate()
-                .map(|(i, point)| (i as u32, Aabb::new(point.clone(), point.clone()))),
+                .map(|(i, point)| (i as u32, Aabb::new(*point, *point))),
             0.0,
         );
         PointSet { points, data, tree }
@@ -64,7 +63,7 @@ where
             let z = record[z_col].parse::<f32>()?;
             let value = record[value_col].parse::<T>()?;
 
-            point_vec.push(Point3::new(x as f32, y as f32, z as f32));
+            point_vec.push(Point3::new(x, y, z));
 
             value_vec.push(value);
         }
@@ -118,7 +117,7 @@ where
         params: &ConditioningParams,
     ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>, bool) {
         let mut cond_points =
-            ConditioningDataCollector::new(*point, ellipsoid, params.max_n_cond, &self);
+            ConditioningDataCollector::new(*point, ellipsoid, params.max_n_cond, self);
 
         let _ = self.tree.traverse_n_best_first(&mut cond_points);
 

@@ -1,16 +1,10 @@
 use nalgebra::{Isometry3, UnitQuaternion, Vector3};
 use nalgebra::{Point3, SimdRealField};
-use num_traits::{Float, NumCast};
 use parry3d::bounding_volume::Aabb;
 use rand::Rng;
-use simba::scalar::{RealField, SubsetOf};
-use simba::simd::SimdPartialOrd;
 use simba::simd::SimdValue;
 
-use crate::{
-    kriging::KrigingParameters, spatial_database::coordinate_system::octant,
-    spatial_database::coordinate_system::CoordinateSystem,
-};
+use crate::spatial_database::coordinate_system::CoordinateSystem;
 
 use super::Geometry;
 

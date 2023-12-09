@@ -262,7 +262,7 @@ mod test {
         let sill = WideF32x8::splat(1.0f32);
         let nugget = WideF32x8::splat(0.2);
 
-        let spherical_vgram = SphericalVariogram::new(range, sill, nugget, vgram_rot);
+        let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
 
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(
@@ -404,7 +404,7 @@ mod test {
         let sill = WideF32x8::splat(1.0f32);
         let nugget = WideF32x8::splat(0.2);
 
-        let spherical_vgram = SphericalVariogram::new(range, sill, nugget, vgram_rot);
+        let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
 
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(
@@ -530,7 +530,7 @@ mod test {
         let sill = WideF32x8::splat(1.0f32);
         let nugget = WideF32x8::splat(0.2);
 
-        let spherical_vgram = SphericalVariogram::new(range, sill, nugget, vgram_rot);
+        let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
 
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(
@@ -675,7 +675,7 @@ mod test {
         let sill = WideF32x8::splat(1.0f32);
         let nugget = WideF32x8::splat(0.2);
 
-        let spherical_vgram = SphericalVariogram::new(range, sill, nugget, vgram_rot);
+        let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
 
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(

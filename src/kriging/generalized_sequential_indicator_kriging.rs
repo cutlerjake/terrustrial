@@ -1,18 +1,12 @@
-use crate::decomposition::lu::{LUSystem, MiniLUSystem};
-use crate::geometry::Geometry;
+use crate::decomposition::lu::MiniLUSystem;
 use crate::kriging::generalized_sequential_kriging::GSK;
-use crate::spatial_database::{FilerterMapConditioningProvider, MapConditioningProvider};
+use crate::spatial_database::MapConditioningProvider;
 use crate::{
     geometry::ellipsoid::Ellipsoid, spatial_database::ConditioningProvider,
     variography::model_variograms::VariogramModel,
 };
 
-use indicatif::ParallelProgressIterator;
 use itertools::izip;
-use mathru::algebra::linear::matrix::General;
-use nalgebra::Point3;
-use rayon::iter::FilterMap;
-use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 use simba::simd::SimdPartialOrd;
 use simba::simd::SimdRealField;
 use simba::simd::SimdValue;
@@ -135,7 +129,7 @@ where
                 cond,
                 self.variogram_models[i].clone(),
                 self.search_ellipsoid.clone(),
-                self.parameters.clone(),
+                self.parameters,
             );
 
             let estimates = gsk.estimate::<SKB, MS>(groups);
@@ -160,21 +154,14 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::{
-        collections::{HashMap, HashSet},
-        fs::File,
-        io::Write,
-    };
+    use std::{collections::HashMap, fs::File, io::Write};
 
-    use itertools::Itertools;
-    use nalgebra::{Translation3, UnitQuaternion, Vector3};
+    use nalgebra::{Point3, Translation3, UnitQuaternion, Vector3};
     use parry3d::bounding_volume::Aabb;
     use simba::simd::WideF32x8;
 
     use crate::{
-        decomposition::lu::{
-            AverageTransfrom, MiniLUOKSystem, ModifiedMiniLUSystem, NegativeFilteredMiniLUSystem,
-        },
+        decomposition::lu::MiniLUOKSystem,
         kriging::{
             generalized_sequential_kriging::optimize_groups, simple_kriging::SKPointSupportBuilder,
         },
@@ -207,9 +194,8 @@ mod test {
             WideF32x8::splat(200.0),
         );
         let sill = WideF32x8::splat(1.0f32);
-        let nugget = WideF32x8::splat(0.2);
 
-        let spherical_vgram = SphericalVariogram::new(range, sill, nugget, vgram_rot);
+        let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
 
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(
@@ -249,7 +235,7 @@ mod test {
         //map points in vec of group of points (64)
         let mut groups = Vec::new();
         //let mut group = Vec::new();
-        for (i, point) in points.iter().enumerate() {
+        for point in points.iter() {
             let aabb = Aabb::new(
                 Point3::new(point.x, point.y, point.z),
                 Point3::new(point.x + 5.0, point.y + 5.0, point.z + 10.0),
@@ -359,9 +345,8 @@ mod test {
             WideF32x8::splat(10.0),
         );
         let sill = WideF32x8::splat(1.0f32);
-        let nugget = WideF32x8::splat(0.2);
 
-        let spherical_vgram = SphericalVariogram::new(range, sill, nugget, vgram_rot);
+        let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
 
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(
@@ -434,7 +419,7 @@ mod test {
             });
 
             // create a gsk system
-            let mut gsk = GSK::new(
+            let gsk = GSK::new(
                 indicator_cond,
                 spherical_vgram,
                 search_ellipsoid.clone(),
@@ -499,7 +484,7 @@ mod test {
             // out_str += row_data.join(",").as_str();
             out_str += "\n";
         }
-        std::fs::write("./test_results/gsik_gc_zones.csv", out_str);
+        let _ = std::fs::write("./test_results/gsik_gc_zones.csv", out_str);
         // let time1 = std::time::Instant::now();
         // let values = gsk
         //     .estimate::<SKPointSupportBuilder, NegativeFilteredMiniLUSystem<MiniLUOKSystem>>(

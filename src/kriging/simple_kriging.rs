@@ -2,20 +2,17 @@ use std::marker::PhantomData;
 
 use crate::{
     geometry::{ellipsoid::Ellipsoid, Geometry},
-    kriging::KrigingParameters,
-    spatial_database::{zero_mean::ZeroMeanTransform, ConditioningProvider, SpatialQueryable},
+    spatial_database::{zero_mean::ZeroMeanTransform, ConditioningProvider},
     variography::model_variograms::VariogramModel,
 };
 
-use dyn_stack::{DynStack, GlobalMemBuffer, ReborrowMut};
+use dyn_stack::{GlobalPodBuffer, PodStack, ReborrowMut};
 use faer_cholesky::llt::compute;
 use faer_core::{mul::inner_prod::inner_prod_with_conj, Conj, Mat, MatRef, Parallelism};
 use indicatif::ParallelProgressIterator;
 use nalgebra::{Point3, SimdRealField, SimdValue, Vector3};
-use num_traits::{Float, NumCast};
+use num_traits::Float;
 use rayon::prelude::*;
-use rstar::Point;
-use simba::scalar::RealField;
 use simba::simd::SimdPartialOrd;
 
 use super::KrigingSystem;
@@ -134,7 +131,7 @@ impl SKBuilder for SKPointSupportBuilder {
                     }
 
                     //update last insert indices
-                    if j + 1 <= i {
+                    if j < i {
                         last_insert_i = i;
                         last_insert_j = j + 1;
                     } else {
@@ -207,11 +204,9 @@ impl SKBuilder for SKPointSupportBuilder {
 
                 //compute covariance
                 let cov = vgram.covariogram(vec);
-                let mut extract_ind = 0;
                 //insert covariance into matrix on current row
-                for insert_i in last_insert_i..=i {
+                for (extract_ind, insert_i) in (last_insert_i..=i).enumerate() {
                     cov_vec.write(insert_i, 0, cov.extract(extract_ind));
-                    extract_ind += 1;
                 }
 
                 //update last insert indices
@@ -221,12 +216,10 @@ impl SKBuilder for SKPointSupportBuilder {
 
         //handle reamining values
         let cov = vgram.covariogram(vec);
-        let mut extract_ind = 0;
 
         //insert covariance into matrix on current row
-        for insert_i in last_insert_i..len {
+        for (extract_ind, insert_i) in (last_insert_i..len).enumerate() {
             cov_vec.write(insert_i, 0, cov.extract(extract_ind));
-            extract_ind += 1;
         }
     }
 }
@@ -301,6 +294,7 @@ impl SKBuilder for SKVolumeSupportBuilder {
         }
     }
 
+    #[allow(unused_variables)]
     fn build_cov_vec<'a, I, V, T>(
         cov_vec: &mut Mat<f32>,
         cond: I,
@@ -335,8 +329,8 @@ pub struct SimpleKrigingSystem {
     pub weights: Mat<f32>,
     pub values: Mat<f32>,
     pub c_0: f32,
-    pub cholesky_compute_mem: GlobalMemBuffer,
-    pub cholesky_solve_mem: GlobalMemBuffer,
+    pub cholesky_compute_mem: GlobalPodBuffer,
+    pub cholesky_solve_mem: GlobalPodBuffer,
     pub n_elems: usize,
 }
 
@@ -349,7 +343,7 @@ impl Clone for SimpleKrigingSystem {
             weights: self.weights.clone(),
             values: self.values.clone(),
             c_0: self.c_0,
-            cholesky_compute_mem: GlobalMemBuffer::new(
+            cholesky_compute_mem: GlobalPodBuffer::new(
                 faer_cholesky::llt::compute::cholesky_in_place_req::<f32>(
                     n_elems,
                     Parallelism::None,
@@ -357,7 +351,7 @@ impl Clone for SimpleKrigingSystem {
                 )
                 .unwrap(),
             ),
-            cholesky_solve_mem: GlobalMemBuffer::new(
+            cholesky_solve_mem: GlobalPodBuffer::new(
                 faer_cholesky::llt::solve::solve_req::<f32>(n_elems, 1, Parallelism::None).unwrap(),
             ),
             n_elems,
@@ -376,7 +370,7 @@ impl SimpleKrigingSystem
     /// * `Self` - The new simple kriging system
     /// * Requires zero mean data
     pub fn new(n_elems: usize) -> Self {
-        let cholesky_compute_mem = GlobalMemBuffer::new(
+        let cholesky_compute_mem = GlobalPodBuffer::new(
             faer_cholesky::llt::compute::cholesky_in_place_req::<f32>(
                 n_elems,
                 Parallelism::None,
@@ -385,7 +379,7 @@ impl SimpleKrigingSystem
             .unwrap(),
         );
 
-        let cholesky_solve_mem = GlobalMemBuffer::new(
+        let cholesky_solve_mem = GlobalPodBuffer::new(
             faer_cholesky::llt::solve::solve_req::<f32>(n_elems, 1, Parallelism::None).unwrap(),
         );
 
@@ -419,12 +413,13 @@ impl SimpleKrigingSystem
     #[inline(always)]
     pub fn compute_weights(&mut self) {
         //create dynstack
-        let mut cholesky_compute_stack = DynStack::new(&mut self.cholesky_compute_mem);
-        let mut cholesky_solve_stack = DynStack::new(&mut self.cholesky_solve_mem);
+        let mut cholesky_compute_stack = PodStack::new(&mut self.cholesky_compute_mem);
+        let mut cholesky_solve_stack = PodStack::new(&mut self.cholesky_solve_mem);
 
         //compute cholseky decomposition of covariance matrix
         let _ = compute::cholesky_in_place(
             self.cond_cov_mat.as_mut(),
+            Default::default(),
             Parallelism::None,
             cholesky_compute_stack.rb_mut(),
             Default::default(),
@@ -473,8 +468,8 @@ impl SimpleKrigingSystem
 
         //store values
         unsafe { self.values.set_dims(cond_values.len(), 1) };
-        for i in 0..cond_values.len() {
-            unsafe { self.values.write_unchecked(i, 0, cond_values[i]) };
+        for (i, &value) in cond_values.iter().enumerate() {
+            unsafe { self.values.write_unchecked(i, 0, value) };
         }
         self.c_0 = vgram.c_0();
 
@@ -687,9 +682,9 @@ where
                     //translate search ellipsoid to kriging point
                     ellipsoid.translate_to(kriging_point);
                     //get nearest points and values
-                    let (_, cond_values, cond_points, res) =
+                    let (_, cond_values, cond_points, _) =
                         self.conditioning_data
-                            .query(kriging_point, &ellipsoid, &self.query_params);
+                            .query(kriging_point, ellipsoid, &self.query_params);
 
                     //build kriging system for point
                     local_system.build_system::<V, T, SKB>(
@@ -712,18 +707,13 @@ mod tests {
 
     use std::{fs::File, io::Write};
 
-    use itertools::Itertools;
-    use nalgebra::{Translation3, UnitQuaternion, Vector3};
-    use ndarray::Array3;
-    use num_traits::Float;
+    use nalgebra::{UnitQuaternion, Vector3};
     use simba::simd::WideF32x8;
 
     use crate::{
         geometry::ellipsoid::Ellipsoid,
         spatial_database::{
-            coordinate_system::{CoordinateSystem, GridSpacing},
-            normalized::Normalize,
-            rtree_point_set::point_set::PointSet,
+            coordinate_system::CoordinateSystem, rtree_point_set::point_set::PointSet,
         },
         variography::model_variograms::spherical::SphericalVariogram,
     };
@@ -743,7 +733,7 @@ mod tests {
         let values = vec![3f32, 4f32, 2f32, 4f32, 6f32];
 
         let rot = UnitQuaternion::identity();
-        let vgram = SphericalVariogram::new(Vector3::new(10f32, 10f32, 10f32), 1f32, 0.25f32, rot);
+        let vgram = SphericalVariogram::new(Vector3::new(10f32, 10f32, 10f32), 1f32, rot);
         let mut system = SimpleKrigingSystem::new(cond_points.len());
         system.build_system::<_, _, SKPointSupportBuilder>(
             cond_points.as_slice(),
@@ -760,89 +750,15 @@ mod tests {
     }
 
     #[test]
-    fn volumetric_cov() {
-        let point_set_1 = vec![
-            Point3::new(2f32, 2f32, 0f32),
-            Point3::new(3f32, 7f32, 0f32),
-            Point3::new(9f32, 9f32, 0f32),
-            Point3::new(6f32, 5f32, 0f32),
-            Point3::new(5f32, 3f32, 0f32),
-        ];
-
-        let point_set_2 = point_set_1
-            .iter()
-            .take(3)
-            .map(|p| {
-                let mut p = p.clone();
-                p.x += 100f32;
-                p.y += 100f32;
-                p.z += 100f32;
-                p
-            })
-            .collect_vec();
-
-        let point_set_3 = point_set_1
-            .iter()
-            .take(4)
-            .map(|p| {
-                let mut p = p.clone();
-                p.x += 200f32;
-                p
-            })
-            .collect_vec();
-
-        let point_set_4 = point_set_1
-            .iter()
-            .take(5)
-            .map(|p| {
-                let mut p = p.clone();
-                p.x += 300f32;
-                p.y += 300f32;
-                p
-            })
-            .collect_vec();
-
-        let point_sets = vec![point_set_1, point_set_2, point_set_3, point_set_4];
-
-        let vgram = SphericalVariogram::<f32>::new(
-            Vector3::new(1000.0, 1000.0, 1000.0),
-            1.0,
-            0.0,
-            UnitQuaternion::identity(),
-        );
-
-        let mut cov_mat = Mat::<f32>::zeros(4, 4);
-
-        // SKPointSupportBuilder::build_volumetric_average(
-        //     &mut cov_mat,
-        //     point_sets.as_slice(),
-        //     &vgram,
-        // );
-
-        println!("{:?}", cov_mat);
-    }
-
-    #[test]
     fn sk_test() {
         // Define the coordinate system for the grid
         // origing at x = 0, y = 0, z = 0
         // azimuth = 0, dip = 0, plunge = 0
-        let coordinate_system = CoordinateSystem::new(
-            Point3::new(0.0, 0.0, 0.0).into(),
-            UnitQuaternion::from_euler_angles(0.0.to_radians(), 0.0.to_radians(), 0.0.to_radians()),
-        );
 
         // create a gridded database from a csv file (walker lake)
         println!("Reading Cond Data");
-        let mut gdb = PointSet::from_csv_index("C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/mineralized_domain_composites.csv", "X", "Y", "Z", "CU")
+        let gdb = PointSet::from_csv_index("C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/mineralized_domain_composites.csv", "X", "Y", "Z", "CU")
             .expect("Failed to create gdb");
-
-        // create a grid to store the simulation values
-        let spacing = GridSpacing {
-            x: 0.1,
-            y: 0.1,
-            z: 1.0,
-        };
 
         let vgram_rot = UnitQuaternion::identity();
         let cs = CoordinateSystem::new(Default::default(), Default::default());
@@ -852,9 +768,8 @@ mod tests {
             WideF32x8::splat(200.0),
         );
         let sill = WideF32x8::splat(1.0f32);
-        let nugget = WideF32x8::splat(0.2);
 
-        let spherical_vgram = SphericalVariogram::new(range, sill, nugget, vgram_rot);
+        let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
 
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(200f32, 200f32, 200f32, cs.clone());
@@ -940,7 +855,7 @@ mod tests {
 
         let mut out = File::create("./test_results/sk.csv").unwrap();
         //write header
-        out.write_all("X,Y,Z,XS,YS,ZS,V\n".as_bytes());
+        let _ = out.write_all("X,Y,Z,XS,YS,ZS,V\n".as_bytes());
 
         //write each row
 

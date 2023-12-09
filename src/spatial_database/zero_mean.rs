@@ -2,8 +2,6 @@ use std::iter;
 
 use num_traits::Float;
 
-use super::SpatialDataBase;
-
 pub struct ZeroMeanTransform<T>
 where
     T: Float,
@@ -36,7 +34,7 @@ where
     T: Float + iter::Sum + Copy,
 {
     fn from(data: &[T]) -> Self {
-        let mean = data.iter().map(|v| *v).sum::<T>() / T::from(data.len()).unwrap();
+        let mean = data.iter().copied().sum::<T>() / T::from(data.len()).unwrap();
         Self::new(mean)
     }
 }

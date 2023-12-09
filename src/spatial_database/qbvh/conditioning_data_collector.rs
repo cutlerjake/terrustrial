@@ -4,7 +4,6 @@ use crate::{
 };
 
 use nalgebra::{distance, Point3, SimdBool as _, SimdPartialOrd, SimdValue};
-use num_traits::NumCast;
 use parry3d::{
     bounding_volume::SimdAabb,
     math::{SimdBool, SimdReal, SIMD_WIDTH},
@@ -234,7 +233,7 @@ impl<'a, 'b, LeafData, T> SimdNBestFirstVisitor<LeafData, SimdAabb>
         } else {
             SimdBestFirstVisitStatus::MaybeContinue {
                 weights: dists,
-                mask: mask,
+                mask,
                 results: [None; SIMD_WIDTH],
             }
         }

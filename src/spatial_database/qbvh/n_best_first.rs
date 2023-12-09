@@ -117,7 +117,7 @@ impl NBestFirst<u32> for Qbvh<u32> {
                                     {
                                         //best_cost = weights[ii];
                                         best_result =
-                                            Some((proxy.node, results[ii].clone().unwrap()))
+                                            Some((proxy.node, results[ii].clone().unwrap()));
                                     }
                                 }
                             } else {

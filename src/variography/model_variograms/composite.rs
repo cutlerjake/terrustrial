@@ -1,12 +1,13 @@
 use nalgebra::{SimdRealField, SimdValue};
 
-use super::{spherical::SphericalVariogram, VariogramModel};
+use super::{nugget::Nugget, spherical::SphericalVariogram, VariogramModel};
 
 #[derive(Clone, Debug)]
 pub enum VariogramType<T>
 where
     T: SimdValue<Element = f32> + Copy,
 {
+    Nugget(Nugget<T>),
     Spherical(SphericalVariogram<T>),
     //TODO
     // Exponential,
@@ -24,18 +25,21 @@ where
     fn c_0(&self) -> <T as SimdValue>::Element {
         match self {
             VariogramType::Spherical(v) => v.c_0(),
+            &VariogramType::Nugget(v) => v.c_0(),
         }
     }
 
     fn variogram(&self, h: nalgebra::Vector3<T>) -> T {
         match self {
             VariogramType::Spherical(v) => v.variogram(h),
+            VariogramType::Nugget(v) => v.variogram(h),
         }
     }
 
     fn covariogram(&self, h: nalgebra::Vector3<T>) -> T {
         match self {
             VariogramType::Spherical(v) => v.covariogram(h),
+            VariogramType::Nugget(v) => v.covariogram(h),
         }
     }
 }
@@ -53,9 +57,7 @@ where
     T: SimdValue<Element = f32> + Copy,
 {
     pub fn new(variograms: Vec<VariogramType<T>>) -> Self {
-        Self {
-            variograms: variograms,
-        }
+        Self { variograms }
     }
 }
 
@@ -64,7 +66,7 @@ where
     T: SimdValue<Element = f32> + SimdRealField + Copy,
 {
     fn c_0(&self) -> <T as SimdValue>::Element {
-        self.variograms.iter().map(|v| v.c_0()).sum()
+        self.variograms.iter().map(VariogramModel::c_0).sum()
     }
 
     fn variogram(&self, h: nalgebra::Vector3<T>) -> T {

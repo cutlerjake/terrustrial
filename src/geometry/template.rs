@@ -1,7 +1,3 @@
-use nalgebra::SimdRealField;
-
-use crate::spatial_database::gridded_databases::GriddedDataBaseInterface;
-
 // pub struct Template {
 //     offsets: Vec<[isize; 3]>,
 // }
