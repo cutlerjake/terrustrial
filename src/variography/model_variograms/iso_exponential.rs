@@ -1,39 +1,59 @@
+use super::IsoVariogramModel;
+
+#[derive(Debug, Clone, Copy, Default)]
 pub struct IsoExponential {
-    pub range: f32,
-    pub sill: f32,
+    pub range: f64,
+    pub sill: f64,
 }
 
 impl IsoExponential {
-    pub fn new(range: f32, sill: f32) -> Self {
+    pub fn new(range: f64, sill: f64) -> Self {
         Self { range, sill }
     }
 
-    pub fn variogram(self, h: f32) -> f32 {
+    pub fn _variogram(self, h: f64) -> f64 {
         if h < self.range {
             return (self.sill) * (1.0 - (-h / self.range).exp());
         }
         return self.sill;
     }
 
-    pub fn covariogram(self, h: f32) -> f32 {
-        self.sill - self.variogram(h)
+    pub fn covariogram(self, h: f64) -> f64 {
+        self.sill - self._variogram(h)
     }
 
     //derivative of variogram with respect to range
-    pub fn variogram_dr(self, h: f32) -> f32 {
-        let r = self.range;
+    // pub fn variogram_dr(self, h: f64) -> f64 {
+    //     let r = self.range;
 
-        (self.sill) * (h * (-h / r).exp()) / (r * r)
+    //     (self.sill) * (h * (-h / r).exp()) / (r * r)
+    // }
+
+    // //derivative of variogram with respect to sill
+    // pub fn variogram_ds(self, h: f32) -> f32 {
+    //     let r = self.range;
+
+    //     -(h * self.sill * (-h / r).exp()) / (r * r)
+    // }
+
+    // pub fn parameter_names() -> Vec<&'static str> {
+    //     vec!["range", "sill"]
+    // }
+}
+
+impl IsoVariogramModel<f64> for IsoExponential {
+    fn c_0(&self) -> f64 {
+        self.sill as f64
     }
 
-    //derivative of variogram with respect to sill
-    pub fn variogram_ds(self, h: f32) -> f32 {
-        let r = self.range;
-
-        -(h * self.sill * (-h / r).exp()) / (r * r)
+    fn variogram(&self, h: f64) -> f64 {
+        if h < self.range {
+            return (self.sill) * (1.0 - (-h / self.range).exp());
+        }
+        return self.sill;
     }
 
-    pub fn parameter_names() -> Vec<&'static str> {
-        vec!["range", "sill"]
+    fn covariogram(&self, h: f64) -> f64 {
+        self.sill - self._variogram(h)
     }
 }

@@ -10,6 +10,8 @@ use rmpfit::{MPFitter, MPPar, MPResult};
 
 use crate::variography::model_variograms::{iso_gaussian, iso_nugget, iso_spherical};
 
+use super::IsoVariogramModel;
+
 #[derive(Debug, Clone)]
 pub enum FitError {
     NoSill,
@@ -38,33 +40,42 @@ pub enum VariogramType {
     Nugget(iso_nugget::Nugget),
 }
 
+impl IsoVariogramModel<f64> for VariogramType {
+    fn c_0(&self) -> f64 {
+        match self {
+            VariogramType::IsoSphericalNoNugget(v) => v.c_0(),
+            VariogramType::IsoGaussian(v) => v.c_0(),
+            VariogramType::Nugget(v) => v.c_0(),
+        }
+    }
+
+    fn variogram(&self, h: f64) -> f64 {
+        match self {
+            VariogramType::IsoSphericalNoNugget(v) => v.variogram(h),
+            VariogramType::IsoGaussian(v) => v.variogram(h),
+            VariogramType::Nugget(v) => v.variogram(h),
+        }
+    }
+
+    fn covariogram(&self, h: f64) -> f64 {
+        match self {
+            VariogramType::IsoSphericalNoNugget(v) => v.covariogram(h),
+            VariogramType::IsoGaussian(v) => v.covariogram(h),
+            VariogramType::Nugget(v) => v.covariogram(h),
+        }
+    }
+}
+
 pub struct CompositeVariogramFitter {
     pub lags: Vec<f32>,
     pub exp_var: Vec<f32>,
     pub variograms: Vec<VariogramType>,
     pub n_params: usize,
-    pub sill: f64,
-    pub range: f64,
     pub mppar_params: Vec<MPPar>,
 }
 
 impl CompositeVariogramFitter {
     pub fn new(lags: Vec<f32>, exp_var: Vec<f32>, variograms: Vec<VariogramType>) -> Self {
-        let sill = variograms.iter().fold(0f64, |acc, v| match v {
-            VariogramType::IsoSphericalNoNugget(v) => acc + v.sill,
-            VariogramType::IsoGaussian(v) => acc + v.sill,
-            VariogramType::Nugget(v) => acc + v.nugget,
-        });
-        let range = variograms
-            .iter()
-            .map(|v| match v {
-                VariogramType::IsoSphericalNoNugget(v) => v.range,
-                VariogramType::IsoGaussian(v) => v.range,
-                VariogramType::Nugget(_) => 0f64,
-            })
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-
         let n_mppar_params = variograms.iter().fold(0usize, |acc, v| match v {
             VariogramType::IsoSphericalNoNugget(_) => acc + 2,
             VariogramType::IsoGaussian(_) => acc + 2,
@@ -83,8 +94,6 @@ impl CompositeVariogramFitter {
             exp_var,
             variograms,
             n_params: n_mppar_params,
-            sill,
-            range,
             mppar_params: mppar_params.collect(),
         }
     }
@@ -123,8 +132,27 @@ impl CompositeVariogramFitter {
         variogram
     }
 
+    pub fn sill(&self) -> f64 {
+        self.variograms.iter().fold(0f64, |acc, v| match v {
+            VariogramType::IsoSphericalNoNugget(v) => acc + v.sill,
+            VariogramType::IsoGaussian(v) => acc + v.sill,
+            VariogramType::Nugget(v) => acc + v.nugget,
+        })
+    }
     pub fn covariogram(&self, h: f64) -> f64 {
-        self.sill - self.variogram(h)
+        self.sill() - self.variogram(h)
+    }
+
+    pub fn range(&self) -> f64 {
+        self.variograms
+            .iter()
+            .map(|v| match v {
+                VariogramType::IsoSphericalNoNugget(v) => v.range,
+                VariogramType::IsoGaussian(v) => v.range,
+                VariogramType::Nugget(_) => 0f64,
+            })
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap()
     }
 
     pub fn fit(&mut self) -> Result<(), FitError> {
@@ -200,7 +228,6 @@ impl CompositeVariogramFitter {
             .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
             .unwrap();
 
-        println!("best: {:?}", best.1);
         self.set_params_from_slice(best.1.as_slice());
         Ok(())
     }

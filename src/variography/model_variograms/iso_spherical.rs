@@ -1,4 +1,6 @@
-#[derive(Debug, Clone)]
+use super::IsoVariogramModel;
+
+#[derive(Debug, Clone, Default, Copy)]
 pub struct IsoSpherical {
     pub range: f64,
     pub sill: f64,
@@ -36,5 +38,22 @@ impl IsoSpherical {
 
     pub fn parameter_names() -> Vec<&'static str> {
         vec!["range"]
+    }
+}
+
+impl IsoVariogramModel<f64> for IsoSpherical {
+    fn c_0(&self) -> f64 {
+        self.sill as f64
+    }
+
+    fn variogram(&self, h: f64) -> f64 {
+        if h < self.range {
+            return self.sill * (1.5 * h / self.range - 0.5 * (h / self.range).powi(3));
+        }
+        return self.sill;
+    }
+
+    fn covariogram(&self, h: f64) -> f64 {
+        self.sill - self.variogram(h)
     }
 }

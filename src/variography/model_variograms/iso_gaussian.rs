@@ -1,4 +1,6 @@
-#[derive(Debug, Clone)]
+use super::IsoVariogramModel;
+
+#[derive(Debug, Clone, Default, Copy)]
 pub struct IsoGaussian {
     pub range: f64,
     pub sill: f64,
@@ -35,5 +37,22 @@ impl IsoGaussian {
     //}
     pub fn parameter_names() -> Vec<&'static str> {
         vec!["range"]
+    }
+}
+
+impl IsoVariogramModel<f64> for IsoGaussian {
+    fn c_0(&self) -> f64 {
+        self.sill as f64
+    }
+
+    fn variogram(&self, h: f64) -> f64 {
+        if h < self.range {
+            return self.sill * (1.0 - (-3f64 * h * h / (self.range * self.range)).exp());
+        }
+        return self.sill;
+    }
+
+    fn covariogram(&self, h: f64) -> f64 {
+        self.sill - self.variogram(h)
     }
 }

@@ -43,6 +43,12 @@ cudarc = "0.9.15"
 bytemuck = { version = "1.14.0", features = ["derive"] }
 bvh = { git = "https://github.com/svenstaro/bvh.git" }
 rmpfit = "0.3.0"
+argmin = { version = "0.8" }
+argmin-math = { version = "0.3", features = [
+    "ndarray_latest-serde",
+    "nalgebra_latest-serde",
+] }
+
 #Fails to build with rust 1.73 due to packed_simd_2 dependency
 #simply updates dependency to packed_simd 0.3.9
 #subscribed to merge request on github, remove when merged

@@ -1,4 +1,4 @@
-use nalgebra::{SimdRealField, SimdValue};
+use nalgebra::{SimdRealField, SimdValue, UnitQuaternion};
 
 use super::{nugget::Nugget, spherical::SphericalVariogram, VariogramModel};
 
@@ -58,6 +58,17 @@ where
 {
     pub fn new(variograms: Vec<VariogramType<T>>) -> Self {
         Self { variograms }
+    }
+
+    pub fn set_orientation(&mut self, orientation: UnitQuaternion<T>)
+    where
+        T: SimdRealField,
+    {
+        for v in self.variograms.iter_mut() {
+            if let VariogramType::Spherical(s) = v {
+                s.rotation = orientation.inverse();
+            }
+        }
     }
 }
 

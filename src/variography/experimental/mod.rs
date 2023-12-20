@@ -1,3 +1,4 @@
+pub mod gpu_vgram;
 use std::sync::Arc;
 
 use bvh::{
@@ -9,11 +10,11 @@ use cudarc::{
     nvrtc::Ptx,
 };
 use itertools::izip;
-use nalgebra::{Point3, Quaternion, UnitQuaternion};
+use nalgebra::{Point3, UnitQuaternion};
 #[derive(Clone, Debug)]
 pub struct VariogramParams {
     //data
-    pub bvh: MyFlatBVH,
+    pub bvh: GPUFlatBVH,
 
     //lags
     pub lags: Vec<LagBounds>,
@@ -32,7 +33,7 @@ pub struct VariogramParams {
 
 impl VariogramParams {
     pub fn new(
-        bvh: MyFlatBVH,
+        bvh: GPUFlatBVH,
         lags: Vec<LagBounds>,
         rotations: Vec<UnitQuaternion<f32>>,
         a: f32,
@@ -93,11 +94,16 @@ impl VariogramParams {
 
         let dev_lags = device.htod_copy(self.lags.clone()).unwrap();
 
-        let (rotations, inv_rotations): (Vec<MyQuaternion>, Vec<MyQuaternion>) = self
+        let (rotations, inv_rotations): (Vec<GPUQuaternion>, Vec<GPUQuaternion>) = self
             .rotations
             .clone()
             .into_iter()
-            .map(|quat| (MyQuaternion::from(quat), MyQuaternion::from(quat.inverse())))
+            .map(|quat| {
+                (
+                    GPUQuaternion::from(quat),
+                    GPUQuaternion::from(quat.inverse()),
+                )
+            })
             .unzip();
         let dev_rotations = device.htod_copy(rotations).unwrap();
         let dev_inv_rotations = device.htod_copy(inv_rotations).unwrap();
@@ -148,7 +154,7 @@ impl VariogramParams {
                 .map(|(v, c)| v / (2f32 * *c as f32))
                 .collect::<Vec<_>>();
             exp_vgrams.push(ExpirmentalVariogram {
-                orientation: *rotation.clone(),
+                orientation: rotation.clone(),
                 lags: self.lags.clone(),
                 semivariance: rot_semi_var,
                 counts: counts[0..self.lags.len()].to_vec(),
@@ -161,7 +167,7 @@ impl VariogramParams {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct GPUVariogramParams {
+pub struct GPUVariogramParams {
     //data
     pub num_data: u32,
 
@@ -219,12 +225,12 @@ impl From<Point3<f32>> for Float3 {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct MyAABB {
+pub struct GPUAABB {
     pub min: Float3,
     pub max: Float3,
 }
 
-unsafe impl DeviceRepr for MyAABB {}
+unsafe impl DeviceRepr for GPUAABB {}
 
 #[derive(Copy, Clone, Debug)]
 pub struct BVHPoint {
@@ -251,22 +257,22 @@ impl BHShape<f32, 3> for BVHPoint {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct MyBVHFlatNode {
-    pub aabb: MyAABB,
+pub struct GPUBVHFlatNode {
+    pub aabb: GPUAABB,
     pub entry_index: u32,
     pub exit_index: u32,
     pub shape_index: u32,
 }
 
-unsafe impl DeviceRepr for MyBVHFlatNode {}
+unsafe impl DeviceRepr for GPUBVHFlatNode {}
 
 #[derive(Debug, Clone)]
-pub struct MyFlatBVH {
-    nodes: Vec<MyBVHFlatNode>,
+pub struct GPUFlatBVH {
+    nodes: Vec<GPUBVHFlatNode>,
     bvh_points: Vec<BVHPoint>,
 }
 
-impl MyFlatBVH {
+impl GPUFlatBVH {
     pub fn new(points: Vec<Point3<f32>>, data: Vec<f32>) -> Self {
         let mut bvh_points = points
             .into_iter()
@@ -280,8 +286,8 @@ impl MyFlatBVH {
         let flat_bvh = bvh::bvh::Bvh::build(&mut bvh_points.as_mut_slice())
             .flatten()
             .iter()
-            .map(|node| MyBVHFlatNode {
-                aabb: MyAABB {
+            .map(|node| GPUBVHFlatNode {
+                aabb: GPUAABB {
                     min: Float3 {
                         x: node.aabb.min.x,
                         y: node.aabb.min.y,
@@ -308,7 +314,7 @@ impl MyFlatBVH {
         &self.bvh_points
     }
 
-    pub fn nodes(&self) -> &Vec<MyBVHFlatNode> {
+    pub fn nodes(&self) -> &Vec<GPUBVHFlatNode> {
         &self.nodes
     }
 }
@@ -330,24 +336,24 @@ impl IntersectsAABB for Aabb<f32, 3> {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct MyQuaternion {
+pub struct GPUQuaternion {
     pub w: f32,
     pub x: f32,
     pub y: f32,
     pub z: f32,
 }
 
-impl MyQuaternion {
+impl GPUQuaternion {
     pub fn new(w: f32, x: f32, y: f32, z: f32) -> Self {
         Self { w, x, y, z }
     }
 }
 
-unsafe impl DeviceRepr for MyQuaternion {}
+unsafe impl DeviceRepr for GPUQuaternion {}
 
-impl From<UnitQuaternion<f32>> for MyQuaternion {
+impl From<UnitQuaternion<f32>> for GPUQuaternion {
     fn from(value: UnitQuaternion<f32>) -> Self {
-        MyQuaternion {
+        GPUQuaternion {
             w: value.w,
             x: value.i,
             y: value.j,
@@ -377,7 +383,7 @@ unsafe impl DeviceRepr for LagBounds {}
 
 #[derive(Debug)]
 pub struct ExpirmentalVariogram {
-    pub orientation: Quaternion<f32>,
+    pub orientation: UnitQuaternion<f32>,
     pub lags: Vec<LagBounds>,
     pub semivariance: Vec<f32>,
     pub counts: Vec<u32>,
@@ -409,7 +415,7 @@ mod test {
             values.push(v);
         }
 
-        let bvh = MyFlatBVH::new(coords, values);
+        let bvh = GPUFlatBVH::new(coords, values);
 
         //create 10 lag bounds
         let lag_lb = (0..15).map(|i| i as f32 * 10f32).collect::<Vec<_>>();
