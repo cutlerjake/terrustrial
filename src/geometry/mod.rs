@@ -4,8 +4,10 @@ use parry3d::bounding_volume::Aabb;
 use simba::simd::SimdValue;
 
 pub mod ellipsoid;
+pub mod elliptical_cylindar;
 pub mod template;
 pub mod tolerance;
+pub mod variogram_tolerance;
 
 pub trait Geometry {
     //translate geometry to new origin

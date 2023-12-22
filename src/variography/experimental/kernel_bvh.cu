@@ -154,8 +154,8 @@ __device__ bool elliptical_cylinder_contains_point(float3 pt1, float3 pt2, float
 
     // allowable range
     float axial_dist = sqrt(dot);
-    float a_range = (axial_dist > major_threshold) ? major : major + axial_dist * tan(major_tol);
-    float b_range = (axial_dist > minor_threshold) ? minor : minor + axial_dist * tan(minor_tol);
+    float a_range = (axial_dist > major_threshold) ? major : axial_dist * tan(major_tol);
+    float b_range = (axial_dist > minor_threshold) ? minor : axial_dist * tan(minor_tol);
 
     // Point lies within the parallel caps, so find
     // position of test point relative to the cylinder

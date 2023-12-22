@@ -2,7 +2,8 @@ use nalgebra::{Quaternion, Unit, UnitVector3};
 use nalgebra::{UnitQuaternion, Vector3};
 use ordered_float::OrderedFloat;
 
-use crate::variography::experimental::gpu_vgram::GPUVGRAM;
+use crate::variography::experimental::cuda_calculator::CudaCalculator;
+use crate::variography::experimental::ExperimentalVarigoramCalculator;
 
 use super::aniso_fitter::AnisoFitter;
 use super::iso_fitter::{CompositeVariogramFitter, VariogramType};
@@ -11,7 +12,7 @@ use argmin::core::{CostFunction, Executor};
 use argmin::solver::particleswarm::ParticleSwarm;
 
 pub struct VariogramOptimizer {
-    params: GPUVGRAM,
+    params: CudaCalculator,
     structures: Vec<VariogramType>,
 }
 
@@ -44,7 +45,7 @@ impl CostFunction for &&mut VariogramOptimizer {
             .collect::<Vec<_>>();
 
         //compute experimental variograms in all directions
-        let exp_variograms = self.params.compute_for_orientations(rotations);
+        let exp_variograms = self.params.calculate_for_orientations(rotations.as_slice());
 
         //fit model for each experimental variogram
         let ranges = exp_variograms.iter().map(|v| {
@@ -61,7 +62,7 @@ impl CostFunction for &&mut VariogramOptimizer {
     }
 }
 impl VariogramOptimizer {
-    pub fn new(params: GPUVGRAM, structures: Vec<VariogramType>) -> Self {
+    pub fn new(params: CudaCalculator, structures: Vec<VariogramType>) -> Self {
         Self { params, structures }
     }
 
@@ -101,7 +102,9 @@ impl VariogramOptimizer {
             .collect::<Vec<_>>();
 
         //compute experimental variograms in all directions
-        let exp_variograms = self.params.compute_for_orientations(perp_quats.clone());
+        let exp_variograms = self
+            .params
+            .calculate_for_orientations(perp_quats.as_slice());
 
         //get perp with greatest range
         let ranges = exp_variograms.iter().map(|v| {
@@ -141,7 +144,7 @@ impl VariogramOptimizer {
             .unwrap(),
         ];
 
-        let exp_vgram = self.params.compute_for_orientations(rotations);
+        let exp_vgram = self.params.calculate_for_orientations(rotations.as_slice());
 
         //fit each experimental variogram
         let mut aniso_fitter = AnisoFitter::new(
@@ -226,7 +229,8 @@ mod test {
     use cudarc::nvrtc::Ptx;
     use nalgebra::Point3;
 
-    use crate::variography::experimental::{GPUFlatBVH, LagBounds};
+    use crate::variography::experimental::cuda_calculator::CudaFlatBVH;
+    use crate::variography::experimental::LagBounds;
 
     use super::*;
 
@@ -256,7 +260,7 @@ mod test {
             values.push(v);
         }
 
-        let bvh = GPUFlatBVH::new(coords, values);
+        let bvh = CudaFlatBVH::new(coords, values);
 
         //create 10 lag bounds
         let lag_lb = (0..15).map(|i| i as f32 * 10f32).collect::<Vec<_>>();
@@ -278,7 +282,7 @@ mod test {
             .expect("unable to load kernel");
         let vgram_kernel = device.get_func("vgram", "vgram_kernel").unwrap();
 
-        let gpu_vgram = GPUVGRAM::new(
+        let gpu_vgram = CudaCalculator::new(
             device,
             vgram_kernel,
             bvh,

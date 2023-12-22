@@ -1,15 +1,195 @@
 use std::sync::Arc;
 
-use cudarc::driver::{CudaDevice, CudaFunction, CudaSlice, LaunchAsync, LaunchConfig};
+use bvh::{aabb::Bounded, bounding_hierarchy::BHShape};
+use cudarc::driver::{CudaDevice, CudaFunction, CudaSlice, DeviceRepr, LaunchAsync, LaunchConfig};
 use itertools::izip;
-use nalgebra::UnitQuaternion;
+use nalgebra::{Point3, UnitQuaternion};
 
-use super::{
-    ExpirmentalVariogram, Float3, GPUBVHFlatNode, GPUFlatBVH, GPUQuaternion, GPUVariogramParams,
-    LagBounds,
-};
+use super::{ExperimentalVarigoramCalculator, ExpirmentalVariogram, LagBounds};
 
-pub struct GPUVGRAM {
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct CudaVariogramParams {
+    //data
+    pub num_data: u32,
+
+    //bvh
+    pub num_bvh_nodes: u32,
+
+    //lags
+    pub num_lags: u32,
+
+    //rotations
+    pub num_rotations: u32,
+
+    //ellipsoid dimensions
+    pub a: f32,
+    pub a_tol: f32,
+    pub a_dist_threshold: f32,
+    pub b: f32,
+    pub b_tol: f32,
+    pub b_dist_threshold: f32,
+}
+
+unsafe impl DeviceRepr for CudaVariogramParams {}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct CudaFloat3 {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+impl CudaFloat3 {
+    pub fn new(x: f32, y: f32, z: f32) -> Self {
+        Self { x, y, z }
+    }
+}
+
+unsafe impl DeviceRepr for CudaFloat3 {}
+
+impl From<CudaFloat3> for Point3<f32> {
+    fn from(value: CudaFloat3) -> Self {
+        Point3::new(value.x, value.y, value.z)
+    }
+}
+
+impl From<Point3<f32>> for CudaFloat3 {
+    fn from(value: Point3<f32>) -> Self {
+        CudaFloat3 {
+            x: value.x,
+            y: value.y,
+            z: value.z,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct CudaGPUAABB {
+    pub min: CudaFloat3,
+    pub max: CudaFloat3,
+}
+
+unsafe impl DeviceRepr for CudaGPUAABB {}
+
+#[derive(Copy, Clone, Debug)]
+pub struct CudaBVHPoint {
+    coords: CudaFloat3,
+    data: f32,
+    node_index: usize,
+}
+
+impl Bounded<f32, 3> for CudaBVHPoint {
+    fn aabb(&self) -> bvh::aabb::Aabb<f32, 3> {
+        bvh::aabb::Aabb::with_bounds(self.coords.into(), self.coords.into())
+    }
+}
+
+impl BHShape<f32, 3> for CudaBVHPoint {
+    fn set_bh_node_index(&mut self, index: usize) {
+        self.node_index = index;
+    }
+
+    fn bh_node_index(&self) -> usize {
+        self.node_index
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct CudaBVHFlatNode {
+    pub aabb: CudaGPUAABB,
+    pub entry_index: u32,
+    pub exit_index: u32,
+    pub shape_index: u32,
+}
+
+unsafe impl DeviceRepr for CudaBVHFlatNode {}
+
+#[derive(Debug, Clone)]
+pub struct CudaFlatBVH {
+    nodes: Vec<CudaBVHFlatNode>,
+    bvh_points: Vec<CudaBVHPoint>,
+}
+
+impl CudaFlatBVH {
+    pub fn new(points: Vec<Point3<f32>>, data: Vec<f32>) -> Self {
+        let mut bvh_points = points
+            .into_iter()
+            .zip(data.into_iter())
+            .map(|(point, data)| CudaBVHPoint {
+                coords: point.into(),
+                data,
+                node_index: 0,
+            })
+            .collect::<Vec<_>>();
+        let flat_bvh = bvh::bvh::Bvh::build(&mut bvh_points.as_mut_slice())
+            .flatten()
+            .iter()
+            .map(|node| CudaBVHFlatNode {
+                aabb: CudaGPUAABB {
+                    min: CudaFloat3 {
+                        x: node.aabb.min.x,
+                        y: node.aabb.min.y,
+                        z: node.aabb.min.z,
+                    },
+                    max: CudaFloat3 {
+                        x: node.aabb.max.x,
+                        y: node.aabb.max.y,
+                        z: node.aabb.max.z,
+                    },
+                },
+                entry_index: node.entry_index,
+                exit_index: node.exit_index,
+                shape_index: node.shape_index,
+            })
+            .collect::<Vec<_>>();
+        Self {
+            nodes: flat_bvh,
+            bvh_points,
+        }
+    }
+
+    pub fn bvh_points(&self) -> &Vec<CudaBVHPoint> {
+        &self.bvh_points
+    }
+
+    pub fn nodes(&self) -> &Vec<CudaBVHFlatNode> {
+        &self.nodes
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct CudaQuaternion {
+    pub w: f32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+impl CudaQuaternion {
+    pub fn new(w: f32, x: f32, y: f32, z: f32) -> Self {
+        Self { w, x, y, z }
+    }
+}
+
+unsafe impl DeviceRepr for CudaQuaternion {}
+
+impl From<UnitQuaternion<f32>> for CudaQuaternion {
+    fn from(value: UnitQuaternion<f32>) -> Self {
+        CudaQuaternion {
+            w: value.w,
+            x: value.i,
+            y: value.j,
+            z: value.k,
+        }
+    }
+}
+
+pub struct CudaCalculator {
     //cuda device
     device: Arc<CudaDevice>,
 
@@ -18,10 +198,10 @@ pub struct GPUVGRAM {
 
     //bvh nodes
     num_nodes: u32,
-    nodes: CudaSlice<GPUBVHFlatNode>,
+    nodes: CudaSlice<CudaBVHFlatNode>,
 
     //data locations and values
-    points: CudaSlice<Float3>,
+    points: CudaSlice<CudaFloat3>,
     values: CudaSlice<f32>,
     num_data: u32,
 
@@ -39,11 +219,11 @@ pub struct GPUVGRAM {
     b_dist_threshold: f32,
 }
 
-impl GPUVGRAM {
+impl CudaCalculator {
     pub fn new(
         device: Arc<CudaDevice>,
         kernel: CudaFunction,
-        bvh: GPUFlatBVH,
+        bvh: CudaFlatBVH,
         lag_bounds: Vec<LagBounds>,
         a: f32,
         a_tol: f32,
@@ -100,9 +280,26 @@ impl GPUVGRAM {
         }
     }
 
-    pub fn compute_for_orientations(
+    pub fn create_cuda_params(&self, n_rotations: u32) -> CudaVariogramParams {
+        CudaVariogramParams {
+            num_data: self.num_data,
+            num_bvh_nodes: self.num_nodes,
+            num_lags: self.num_lags,
+            num_rotations: n_rotations,
+            a: self.a,
+            a_tol: self.a_tol,
+            b: self.b,
+            b_tol: self.b_tol,
+            a_dist_threshold: self.a_dist_threshold,
+            b_dist_threshold: self.b_dist_threshold,
+        }
+    }
+}
+
+impl ExperimentalVarigoramCalculator for CudaCalculator {
+    fn calculate_for_orientations(
         &self,
-        rotations: Vec<UnitQuaternion<f32>>,
+        rotations: &[UnitQuaternion<f32>],
     ) -> Vec<ExpirmentalVariogram> {
         //create inverse of rotations
         let inv_rotations: Vec<_> = rotations.iter().map(|r| r.inverse()).collect();
@@ -111,16 +308,16 @@ impl GPUVGRAM {
         let n_rotations = rotations.len() as u32;
         let gpu_rotations = rotations
             .iter()
-            .map(|r| GPUQuaternion::from(*r))
+            .map(|r| CudaQuaternion::from(*r))
             .collect::<Vec<_>>();
 
         let gpu_inv_rotations = inv_rotations
             .iter()
-            .map(|r| GPUQuaternion::from(*r))
+            .map(|r| CudaQuaternion::from(*r))
             .collect::<Vec<_>>();
 
         //create gou parameters
-        let gpu_params = self.create_gpu_params(n_rotations);
+        let gpu_params = self.create_cuda_params(n_rotations);
 
         //copy rotations and inverse rotations to device
         let dev_rotations = self
@@ -186,21 +383,6 @@ impl GPUVGRAM {
 
         variograms
     }
-
-    pub fn create_gpu_params(&self, n_rotations: u32) -> GPUVariogramParams {
-        GPUVariogramParams {
-            num_data: self.num_data,
-            num_bvh_nodes: self.num_nodes,
-            num_lags: self.num_lags,
-            num_rotations: n_rotations,
-            a: self.a,
-            a_tol: self.a_tol,
-            b: self.b,
-            b_tol: self.b_tol,
-            a_dist_threshold: self.a_dist_threshold,
-            b_dist_threshold: self.b_dist_threshold,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -225,7 +407,7 @@ mod test {
             values.push(v);
         }
 
-        let bvh = GPUFlatBVH::new(coords, values);
+        let bvh = CudaFlatBVH::new(coords, values);
 
         //create 10 lag bounds
         let lag_lb = (0..15).map(|i| i as f32 * 10f32).collect::<Vec<_>>();
@@ -264,7 +446,7 @@ mod test {
             .expect("unable to load kernel");
         let vgram_kernel = device.get_func("vgram", "vgram_kernel").unwrap();
 
-        let gpu_vgram = GPUVGRAM::new(
+        let gpu_vgram = CudaCalculator::new(
             device,
             vgram_kernel,
             bvh,
@@ -276,7 +458,7 @@ mod test {
         );
 
         for _ in 0..3 {
-            let exp_vgrams = gpu_vgram.compute_for_orientations(quats.clone());
+            let exp_vgrams = gpu_vgram.calculate_for_orientations(quats.as_slice());
 
             println!("exp_vgrams: {:?}", exp_vgrams);
         }
