@@ -6,6 +6,7 @@ use nalgebra::Point3;
 use parry3d::bounding_volume::Aabb;
 use rstar::primitives::GeomWithData;
 use rstar::{RTree, AABB};
+use serde::{Deserialize, Serialize};
 
 use crate::geometry::ellipsoid::Ellipsoid;
 use crate::kriging::simple_kriging::ConditioningParams;
@@ -14,7 +15,7 @@ use crate::spatial_database::{ConditioningProvider, SpatialDataBase};
 
 type Point = GeomWithData<[f32; 3], u32>;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PointSet<T> {
     pub tree: RTree<Point>,
     pub points: Vec<Point3<f32>>,

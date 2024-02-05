@@ -24,11 +24,13 @@ ndarray = "0.15.6"
 num-traits = "0.2.15"
 parry3d = { version = "0.13.5", features = ["simd-stable"] }
 rand = "0.8.5"
-rstar = "0.11.0"
+rstar = { version = "0.11.0", features = ["serde"] }
 dyn-stack = "0.10.0"
 # simba = { git = "https://github.com/dimforge/simba.git", branch = "master", features = [
 #     "packed_simd",
 # ] }
+serde = { version = "1", features = ["derive"] }
+
 simba = { version = "0.8.1", optional = true }
 bitvec = "1.0.1"
 ordered-float = "3.7.0"
@@ -48,7 +50,6 @@ argmin-math = { version = "0.3", features = [
     "ndarray_latest-serde",
     "nalgebra_latest-serde",
 ] }
-
 #Fails to build with rust 1.73 due to packed_simd_2 dependency
 #simply updates dependency to packed_simd 0.3.9
 #subscribed to merge request on github, remove when merged
