@@ -1,4 +1,5 @@
-use nalgebra::{Point3, UnitQuaternion};
+use nalgebra::{Point3, UnitQuaternion, UnitVector3};
+use parry3d::shape::Cylinder;
 
 pub struct VariogramTolerance {
     pub p1: Point3<f32>,
@@ -9,7 +10,8 @@ pub struct VariogramTolerance {
     pub b: f32,
     pub b_tol: f32,
     pub b_dist_threshold: f32,
-    pub orientation: UnitQuaternion<f32>,
+    pub axis: UnitVector3<f32>,
+    pub rotation: UnitQuaternion<f32>,
 }
 
 impl VariogramTolerance {
@@ -20,11 +22,13 @@ impl VariogramTolerance {
         a_tol: f32,
         b: f32,
         b_tol: f32,
-        orientation: UnitQuaternion<f32>,
+        axis: UnitVector3<f32>,
+        angle: f32,
     ) -> Self {
         let a_dist_threshold = a / a_tol.tan();
         let b_dist_threshold = b / b_tol.tan();
 
+        let rotation = UnitQuaternion::from_axis_angle(&axis, angle);
         Self {
             p1,
             length,
@@ -34,12 +38,14 @@ impl VariogramTolerance {
             b,
             b_tol,
             b_dist_threshold,
-            orientation,
+            axis,
+            rotation,
         }
     }
 
     pub fn offset_along_axis(&mut self, offset: f32) {
-        self.p1 += self.orientation * nalgebra::Vector3::x() * offset;
+        self.p1 += self.axis.scale(offset);
+        // self.p1 += self.rotation * nalgebra::Vector3::x() * offset;
     }
 
     pub fn set_base(&mut self, base: Point3<f32>) {
@@ -51,7 +57,9 @@ impl VariogramTolerance {
 
         let min = Point3::new(self.p1.x - offset, self.p1.y - offset, self.p1.z - offset);
 
-        let cylinder_axis = self.orientation * nalgebra::Vector3::x() * self.length;
+        let cylinder_axis = self.axis.scale(self.length);
+
+        // let cylinder_axis = self.rotation * nalgebra::Vector3::x() * self.length;
 
         let max = Point3::new(
             self.p1.x + cylinder_axis.x + offset,
@@ -63,7 +71,7 @@ impl VariogramTolerance {
     }
 
     pub fn contains_point(&self, point: Point3<f32>) -> bool {
-        let cylinder_axis = self.orientation * nalgebra::Vector3::x() * self.length;
+        let cylinder_axis = self.axis.scale(self.length);
         let length_sq = cylinder_axis.dot(&cylinder_axis);
 
         let p1 = self.p1;
@@ -75,7 +83,7 @@ impl VariogramTolerance {
             return false;
         }
 
-        let cylinder_aligned_point = self.orientation.inverse_transform_point(&v.into());
+        let cylinder_aligned_point = self.rotation.inverse_transform_point(&v.into());
 
         let axial_dist = dot.sqrt();
 

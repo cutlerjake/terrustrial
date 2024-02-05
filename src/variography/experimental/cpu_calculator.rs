@@ -4,7 +4,7 @@ use crate::spatial_database::rtree_point_set::point_set::PointSet;
 use super::{ExperimentalVarigoramCalculator, LagBounds};
 
 use itertools::{izip, Itertools};
-use nalgebra::Point3;
+use nalgebra::{Point3, UnitVector3};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use rstar::AABB;
 
@@ -45,7 +45,7 @@ impl CPUCalculator {
 impl ExperimentalVarigoramCalculator for CPUCalculator {
     fn calculate_for_orientations(
         &self,
-        orientations: &[nalgebra::UnitQuaternion<f32>],
+        orientations: &[(UnitVector3<f32>, f32)],
     ) -> Vec<super::ExpirmentalVariogram> {
         let runs = orientations
             .iter()
@@ -57,7 +57,7 @@ impl ExperimentalVarigoramCalculator for CPUCalculator {
 
         let exp_data = runs
             .par_bridge()
-            .map(|(index, (rot, lag_bound))| {
+            .map(|(index, ((axis, rot), lag_bound))| {
                 let mut tolerance = VariogramTolerance::new(
                     Point3::origin(),
                     lag_bound.ub - lag_bound.lb,
@@ -65,6 +65,7 @@ impl ExperimentalVarigoramCalculator for CPUCalculator {
                     self.a_tol,
                     self.b,
                     self.b_tol,
+                    *axis,
                     *rot,
                 );
 
@@ -121,13 +122,14 @@ impl ExperimentalVarigoramCalculator for CPUCalculator {
 
         let mut variograms = Vec::with_capacity(orientations.len());
 
-        for (semivar_chunk, count_chunk, rot) in izip!(
+        for (semivar_chunk, count_chunk, (axis, rot)) in izip!(
             semivar.chunks(self.lags.len()),
             counts.chunks(self.lags.len()),
             orientations
         ) {
             let mut variogram = super::ExpirmentalVariogram {
-                orientation: *rot,
+                axis: *axis,
+                rot: *rot,
                 lags: self.lags.clone(),
                 semivariance: semivar_chunk.to_vec(),
                 counts: count_chunk.to_vec(),
@@ -149,7 +151,7 @@ impl ExperimentalVarigoramCalculator for CPUCalculator {
 
 #[cfg(test)]
 mod test {
-    use nalgebra::UnitQuaternion;
+    use nalgebra::{UnitQuaternion, Vector3};
 
     use super::*;
 
@@ -178,25 +180,25 @@ mod test {
             .collect::<Vec<_>>();
 
         // create quaternions
-        let mut quats = vec![UnitQuaternion::identity()];
-        for ang1 in 0..1 {
-            for ang2 in 0..1 {
-                for ang3 in 0..1 {
-                    quats.push(UnitQuaternion::from_euler_angles(
-                        (ang1 as f32 * 10f32).to_radians(),
-                        (ang2 as f32 * 10f32).to_radians(),
-                        (ang3 as f32 * 10f32).to_radians(),
-                    ));
+        let mut axis_angles = vec![];
+        for i in 1..5 {
+            for j in 0..5 {
+                for k in 0..5 {
+                    let axis =
+                        UnitVector3::new_normalize(Vector3::from([i as f32, j as f32, k as f32]));
+                    let rot = 0.0;
+                    axis_angles.push((axis, rot));
                 }
             }
         }
 
         let cpu_calc = CPUCalculator::new(point_set, lag_bounds, 10f32, 0.1f32, 10f32, 0.1f32);
 
-        let vgrams = cpu_calc.calculate_for_orientations(&quats);
+        let vgrams = cpu_calc.calculate_for_orientations(&axis_angles);
 
         for vgram in vgrams.iter() {
             println!("{:?}", vgram);
+            break;
         }
     }
 }
