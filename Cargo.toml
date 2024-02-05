@@ -41,7 +41,7 @@ itertools = "0.11.0"
 rand_distr = "0.4.3"
 mathru = "0.15.2"
 parking_lot = "0.12.1"
-cudarc = "0.9.15"
+# cudarc = "0.9.15"
 bytemuck = { version = "1.14.0", features = ["derive"] }
 bvh = { git = "https://github.com/svenstaro/bvh.git" }
 rmpfit = "0.3.0"

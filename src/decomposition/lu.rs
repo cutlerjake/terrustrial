@@ -633,6 +633,7 @@ mod tests {
             UnitQuaternion::from_euler_angles(0.0.to_radians(), 0.0.to_radians(), 0.0.to_radians());
         let range = Vector3::new(2.0, 2.0, 2.0);
         let sill = 1.0;
+        let t = UnitQuaternion::from_axis_angle(&Vector3::x_axis(), 0.3);
 
         let vgram = SphericalVariogram::<f32>::new(range, sill, vgram_rot);
         let mut rng = StdRng::seed_from_u64(0);

@@ -9,7 +9,7 @@ pub mod iso_gaussian;
 pub mod iso_nugget;
 pub mod iso_spherical;
 pub mod nugget;
-pub mod optimizer;
+// pub mod optimizer;
 pub mod spherical;
 
 pub trait IsoVariogramModel<T>

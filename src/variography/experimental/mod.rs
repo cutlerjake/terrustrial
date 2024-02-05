@@ -1,8 +1,8 @@
 pub mod cpu_calculator;
-pub mod cuda_calculator;
+// pub mod cuda_calculator;
 
 use bvh::aabb::Aabb;
-use cudarc::driver::DeviceRepr;
+// use cudarc::driver::DeviceRepr;
 use nalgebra::UnitQuaternion;
 
 pub trait IntersectsAABB {
@@ -37,7 +37,7 @@ impl LagBounds {
     }
 }
 
-unsafe impl DeviceRepr for LagBounds {}
+// unsafe impl DeviceRepr for LagBounds {}
 
 pub trait ExperimentalVarigoramCalculator {
     fn calculate_for_orientations(
