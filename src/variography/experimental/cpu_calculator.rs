@@ -8,6 +8,7 @@ use nalgebra::{Point3, UnitVector3};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use rstar::AABB;
 
+#[derive(Clone)]
 pub struct CPUCalculator {
     //data tree
     data: PointSet<f32>,
