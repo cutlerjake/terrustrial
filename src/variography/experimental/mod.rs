@@ -45,7 +45,7 @@ pub trait ExperimentalVarigoramCalculator {
         orientations: &[(UnitVector3<f32>, f32)],
     ) -> Vec<ExpirmentalVariogram>;
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExpirmentalVariogram {
     pub axis: UnitVector3<f32>,
     pub rot: f32,
