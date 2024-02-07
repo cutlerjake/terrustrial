@@ -44,7 +44,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct CompositeVariogram<T>
 where
     T: SimdValue<Element = f32> + Copy,
