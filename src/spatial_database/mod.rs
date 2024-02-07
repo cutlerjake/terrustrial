@@ -242,6 +242,7 @@ pub enum RoationType {
     Intrinsic,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum RotationAxis {
     X,
     Y,
