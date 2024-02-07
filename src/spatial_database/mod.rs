@@ -257,6 +257,14 @@ impl RotationAxis {
             _ => panic!("Invalid rotation axis"),
         }
     }
+
+    pub fn as_char(&self) -> char {
+        match self {
+            Self::X => 'x',
+            Self::Y => 'y',
+            Self::Z => 'z',
+        }
+    }
 }
 
 pub trait FromAxisAngles
