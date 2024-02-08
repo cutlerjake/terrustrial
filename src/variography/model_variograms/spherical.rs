@@ -1,11 +1,13 @@
+use nalgebra::Quaternion;
 use nalgebra::SimdRealField;
+use nalgebra::Unit;
 use nalgebra::UnitQuaternion;
 use nalgebra::Vector3;
 
 use super::VariogramModel;
 use simba::simd::SimdValue;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct SphericalVariogram<T>
 where
     T: SimdValue<Element = f32> + Copy,
@@ -13,6 +15,20 @@ where
     pub range: Vector3<T>,
     pub sill: T,
     pub rotation: UnitQuaternion<T>,
+}
+
+impl<T> Default for SphericalVariogram<T>
+where
+    T: SimdValue<Element = f32> + Copy + SimdRealField,
+{
+    fn default() -> Self {
+        let quat = UnitQuaternion::from_quaternion(Quaternion::from_real(T::splat(1.0)));
+        Self {
+            range: Vector3::new(T::splat(1.0), T::splat(1.0), T::splat(1.0)),
+            sill: T::splat(1.0),
+            rotation: quat,
+        }
+    }
 }
 
 impl<T> SphericalVariogram<T>
