@@ -102,6 +102,11 @@ impl ExperimentalVarigoramCalculator for CPUCalculator {
                         let pair_ind = pair_data.data;
                         let pair_value = self.data.data[pair_ind as usize];
 
+                        //skip if same point
+                        if pair_ind as usize == i {
+                            continue;
+                        }
+
                         if !tolerance.contains_point(pair_point) {
                             continue;
                         }
