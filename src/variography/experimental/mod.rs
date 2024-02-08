@@ -42,13 +42,12 @@ impl LagBounds {
 pub trait ExperimentalVarigoramCalculator {
     fn calculate_for_orientations(
         &self,
-        orientations: &[(UnitVector3<f32>, f32)],
+        orientations: &[UnitQuaternion<f32>],
     ) -> Vec<ExpirmentalVariogram>;
 }
 #[derive(Debug, Clone)]
 pub struct ExpirmentalVariogram {
-    pub axis: UnitVector3<f32>,
-    pub rot: f32,
+    pub orientation: UnitQuaternion<f32>,
     pub lags: Vec<LagBounds>,
     pub semivariance: Vec<f32>,
     pub counts: Vec<u32>,
