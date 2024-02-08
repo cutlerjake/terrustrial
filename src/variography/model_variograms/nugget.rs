@@ -2,7 +2,7 @@ use nalgebra::{SimdRealField, SimdValue, Vector3};
 
 use super::VariogramModel;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Nugget<T>
 where
     T: SimdValue<Element = f32> + Copy,
