@@ -1,4 +1,5 @@
 use nalgebra::{SimdRealField, SimdValue, Vector3};
+use simba::simd::WideF32x8;
 
 use super::VariogramModel;
 
@@ -16,6 +17,14 @@ where
 {
     pub fn new(nugget: T) -> Self {
         Self { nugget }
+    }
+}
+
+impl Nugget<f32> {
+    pub fn to_f32x8(&self) -> Nugget<WideF32x8> {
+        Nugget {
+            nugget: WideF32x8::splat(self.nugget),
+        }
     }
 }
 

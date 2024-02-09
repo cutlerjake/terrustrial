@@ -1,4 +1,5 @@
 use nalgebra::{SimdRealField, SimdValue, UnitQuaternion};
+use simba::simd::WideF32x8;
 
 use super::{nugget::Nugget, spherical::SphericalVariogram, VariogramModel};
 
@@ -16,6 +17,15 @@ where
     // Power,
     // HoleEffect,
     // Custom,
+}
+
+impl VariogramType<f32> {
+    pub fn to_f32x8(&self) -> VariogramType<WideF32x8> {
+        match self {
+            VariogramType::Nugget(n) => VariogramType::Nugget(n.to_f32x8()),
+            VariogramType::Spherical(s) => VariogramType::Spherical(s.to_f32x8()),
+        }
+    }
 }
 
 impl<T> VariogramModel<T> for VariogramType<T>
@@ -68,6 +78,14 @@ where
             if let VariogramType::Spherical(s) = v {
                 s.rotation = orientation.inverse();
             }
+        }
+    }
+}
+
+impl CompositeVariogram<f32> {
+    pub fn to_f32x8(&self) -> CompositeVariogram<WideF32x8> {
+        CompositeVariogram {
+            variograms: self.variograms.iter().map(|v| v.to_f32x8()).collect(),
         }
     }
 }

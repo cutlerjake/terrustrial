@@ -3,6 +3,7 @@ use nalgebra::SimdRealField;
 use nalgebra::Unit;
 use nalgebra::UnitQuaternion;
 use nalgebra::Vector3;
+use simba::simd::WideF32x8;
 
 use super::VariogramModel;
 use simba::simd::SimdValue;
@@ -42,6 +43,16 @@ where
             range,
             sill,
             rotation: rotation.inverse(),
+        }
+    }
+}
+
+impl SphericalVariogram<f32> {
+    pub fn to_f32x8(&self) -> SphericalVariogram<WideF32x8> {
+        SphericalVariogram {
+            range: Vector3::splat(self.range),
+            sill: WideF32x8::splat(self.sill),
+            rotation: UnitQuaternion::splat(self.rotation),
         }
     }
 }
