@@ -1,6 +1,5 @@
 use nalgebra::Quaternion;
 use nalgebra::SimdRealField;
-use nalgebra::Unit;
 use nalgebra::UnitQuaternion;
 use nalgebra::Vector3;
 use simba::simd::WideF32x8;

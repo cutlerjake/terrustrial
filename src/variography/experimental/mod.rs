@@ -3,7 +3,7 @@ pub mod cpu_calculator;
 
 use bvh::aabb::Aabb;
 // use cudarc::driver::DeviceRepr;
-use nalgebra::{UnitQuaternion, UnitVector3};
+use nalgebra::UnitQuaternion;
 
 pub trait IntersectsAABB {
     fn intersects_aabb(&self, aabb: &bvh::aabb::Aabb<f32, 3>) -> bool;

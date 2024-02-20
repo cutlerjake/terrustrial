@@ -81,11 +81,10 @@ impl CompositeVariogramFitter {
             VariogramType::IsoGaussian(_) => acc + 2,
             VariogramType::Nugget(_) => acc + 1,
         });
-        let mppar_params = (0..n_mppar_params).map(|_| {
-            let mut param = MPPar::default();
-            param.limited_low = true;
-            param.limit_low = 0.0;
-            param
+        let mppar_params = (0..n_mppar_params).map(|_| MPPar {
+            limited_low: true,
+            limit_low: 0.0,
+            ..Default::default()
         });
 
         //println!("map: {:?}", derivative_map);
@@ -193,7 +192,7 @@ impl CompositeVariogramFitter {
         let sill_rng = 0f64..max_sill;
 
         let best = (0..1000)
-            .map(|_| {
+            .filter_map(|_| {
                 let mut init_range = self.variograms.iter().fold(vec![], |mut acc, v| match v {
                     VariogramType::IsoSphericalNoNugget(_) => {
                         acc.extend(vec![
@@ -223,8 +222,6 @@ impl CompositeVariogramFitter {
 
                 Some((err, init_range))
             })
-            .filter(|x| x.is_some())
-            .map(|x| x.unwrap())
             .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
             .unwrap();
 
@@ -241,7 +238,7 @@ impl MPFitter for CompositeVariogramFitter {
 
         //compute deviates
         for (d, x, y) in izip!(deviates.iter_mut(), self.lags.iter(), self.exp_var.iter()) {
-            *d = (*y as f64 - self.variogram(*x as f64)) as f64;
+            *d = *y as f64 - self.variogram(*x as f64);
         }
 
         Ok(())

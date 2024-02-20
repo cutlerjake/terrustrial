@@ -1,5 +1,4 @@
-use nalgebra::{Point3, UnitQuaternion, UnitVector3};
-use parry3d::shape::Cylinder;
+use nalgebra::{Point3, UnitQuaternion};
 
 pub struct VariogramTolerance {
     pub p1: Point3<f32>,
@@ -35,7 +34,7 @@ impl VariogramTolerance {
             b,
             b_tol,
             b_dist_threshold,
-            orientation: orientation,
+            orientation,
         }
     }
 

@@ -221,7 +221,10 @@ mod test {
             coordinate_system::CoordinateSystem, rtree_point_set::point_set::PointSet,
             zero_mean::ZeroMeanTransform, DiscretiveVolume,
         },
-        variography::model_variograms::spherical::SphericalVariogram,
+        variography::model_variograms::{
+            composite::{CompositeVariogram, VariogramType},
+            spherical::SphericalVariogram,
+        },
     };
 
     use super::*;
@@ -243,7 +246,9 @@ mod test {
         );
         let sill = WideF32x8::splat(1.0f32);
 
-        let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
+        let spherical_vgram = CompositeVariogram::new(vec![VariogramType::Spherical(
+            SphericalVariogram::new(range, sill, vgram_rot),
+        )]);
 
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(

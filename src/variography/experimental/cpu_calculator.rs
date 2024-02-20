@@ -4,7 +4,7 @@ use crate::spatial_database::rtree_point_set::point_set::PointSet;
 use super::{ExperimentalVarigoramCalculator, LagBounds};
 
 use itertools::{izip, Itertools};
-use nalgebra::{Point3, UnitQuaternion, UnitVector3};
+use nalgebra::{Point3, UnitQuaternion};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use rstar::AABB;
 
@@ -155,13 +155,15 @@ impl ExperimentalVarigoramCalculator for CPUCalculator {
 
 #[cfg(test)]
 mod test {
-    use nalgebra::{UnitQuaternion, Vector3};
+    use nalgebra::UnitQuaternion;
 
     use super::*;
+    use rand::seq::SliceRandom;
+    use rand::thread_rng;
 
     #[test]
     fn cpu_vgram() {
-        let path = r"C:\Users\2jake\OneDrive - McGill University\Fall2022\MIME525\Project4\drillholes_jake.csv";
+        let path = r"C:\Users\2jake\OneDrive\Desktop\foresight\testing_geostats_data\point_cloud\point_set_300_reduced.csv";
         let mut reader = csv::Reader::from_path(path).expect("Unable to open file.");
 
         let mut coords = Vec::new();
@@ -172,37 +174,32 @@ mod test {
             coords.push(Point3::new(x, y, z));
             values.push(v);
         }
+        let mut ind = (0..coords.len()).collect::<Vec<_>>();
+        let mut rng = thread_rng();
+        for _ in 0..100 {
+            ind.shuffle(&mut rng);
 
-        let point_set = PointSet::new(coords, values);
+            let shuffled_coords = ind.iter().map(|&i| coords[i]).collect::<Vec<_>>();
+            let shuffled_values = ind.iter().map(|&i| values[i]).collect::<Vec<_>>();
+            let point_set = PointSet::new(shuffled_coords, shuffled_values);
+            let quat = UnitQuaternion::identity();
 
-        let lag_lb = (0..15).map(|i| i as f32 * 10f32).collect::<Vec<_>>();
-        let lag_ub = (0..15).map(|i| (i + 1) as f32 * 10f32).collect::<Vec<_>>();
-        let lag_bounds = lag_lb
-            .iter()
-            .zip(lag_ub.iter())
-            .map(|(lb, ub)| LagBounds::new(*lb, *ub))
-            .collect::<Vec<_>>();
+            let lag_lb = (0..15).map(|i| i as f32 * 10f32).collect::<Vec<_>>();
+            let lag_ub = (0..15).map(|i| (i + 1) as f32 * 10f32).collect::<Vec<_>>();
+            let lag_bounds = lag_lb
+                .iter()
+                .zip(lag_ub.iter())
+                .map(|(lb, ub)| LagBounds::new(*lb, *ub))
+                .collect::<Vec<_>>();
 
-        // create quaternions
-        // let mut axis_angles = vec![];
-        // for i in 1..5 {
-        //     for j in 0..5 {
-        //         for k in 0..5 {
-        //             let axis =
-        //                 UnitVector3::new_normalize(Vector3::from([i as f32, j as f32, k as f32]));
-        //             let rot = 0.0;
-        //             axis_angles.push((axis, rot));
-        //         }
-        //     }
-        // }
+            let cpu_calc = CPUCalculator::new(point_set, lag_bounds, 10f32, 0.1f32, 10f32, 0.1f32);
 
-        // let cpu_calc = CPUCalculator::new(point_set, lag_bounds, 10f32, 0.1f32, 10f32, 0.1f32);
+            let vgrams = cpu_calc.calculate_for_orientations(&[quat]);
 
-        // let vgrams = cpu_calc.calculate_for_orientations(&axis_angles);
-
-        // for vgram in vgrams.iter() {
-        //     println!("{:?}", vgram);
-        //     break;
-        // }
+            for vgram in vgrams.iter() {
+                println!("{:?}", vgram.semivariance);
+                break;
+            }
+        }
     }
 }

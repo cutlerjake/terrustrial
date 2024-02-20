@@ -133,8 +133,12 @@ impl<'b> ConditioningDataCollector<'b> {
             n_cond,
             max_accepted_dist: f32::MAX,
             ellipsoid,
-            octant_points: vec![Vec::with_capacity(n_cond); 8],
-            octant_inds: vec![Vec::with_capacity(n_cond); 8],
+            octant_points: (0..8)
+                .map(|_| Vec::with_capacity(n_cond))
+                .collect::<Vec<_>>(),
+            octant_inds: (0..8)
+                .map(|_| Vec::with_capacity(n_cond))
+                .collect::<Vec<_>>(),
             full_octants: 0,
             conditioned_octants: 0,
             stop: false,

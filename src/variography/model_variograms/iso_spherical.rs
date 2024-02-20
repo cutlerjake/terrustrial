@@ -15,7 +15,7 @@ impl IsoSpherical {
         if h < self.range {
             return self.sill * (1.5 * h / self.range - 0.5 * (h / self.range).powi(3));
         }
-        return self.sill;
+        self.sill
     }
 
     pub fn covariogram(&self, h: f64) -> f64 {
@@ -26,7 +26,7 @@ impl IsoSpherical {
     pub fn variogram_dr(&self, h: f64) -> f64 {
         let r = self.range;
 
-        return self.sill * (1.5 * h * h * h / (r * r * r * r) - 1.5 * h / (r * r));
+        self.sill * (1.5 * h * h * h / (r * r * r * r) - 1.5 * h / (r * r))
     }
 
     //derivative of variogram with respect to sill
@@ -43,14 +43,14 @@ impl IsoSpherical {
 
 impl IsoVariogramModel<f64> for IsoSpherical {
     fn c_0(&self) -> f64 {
-        self.sill as f64
+        self.sill
     }
 
     fn variogram(&self, h: f64) -> f64 {
         if h < self.range {
             return self.sill * (1.5 * h / self.range - 0.5 * (h / self.range).powi(3));
         }
-        return self.sill;
+        self.sill
     }
 
     fn covariogram(&self, h: f64) -> f64 {

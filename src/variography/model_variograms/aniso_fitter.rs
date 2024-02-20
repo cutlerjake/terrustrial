@@ -173,7 +173,7 @@ impl CostFunction for &mut AnisoFitter {
         let mut composite = IsoComposite::new(self.structures.clone());
 
         let mut residual = 0.0;
-        for exp in vec![
+        for exp in [
             &self.major_axis_semivar,
             &self.intermediate_axis_semivar,
             &self.minor_axis_semivar,
@@ -201,7 +201,7 @@ impl CostFunction for &mut AnisoFitter {
             }
 
             for (exp_val, &lag) in exp.iter().zip(self.lags.iter()) {
-                residual += (exp_val - composite.variogram(lag) as f64).powi(2);
+                residual += (exp_val - composite.variogram(lag)).powi(2);
             }
         }
 

@@ -15,7 +15,7 @@ impl IsoExponential {
         if h < self.range {
             return (self.sill) * (1.0 - (-h / self.range).exp());
         }
-        return self.sill;
+        self.sill
     }
 
     pub fn covariogram(self, h: f64) -> f64 {
@@ -43,14 +43,14 @@ impl IsoExponential {
 
 impl IsoVariogramModel<f64> for IsoExponential {
     fn c_0(&self) -> f64 {
-        self.sill as f64
+        self.sill
     }
 
     fn variogram(&self, h: f64) -> f64 {
         if h < self.range {
             return (self.sill) * (1.0 - (-h / self.range).exp());
         }
-        return self.sill;
+        self.sill
     }
 
     fn covariogram(&self, h: f64) -> f64 {

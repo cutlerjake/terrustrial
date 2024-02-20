@@ -110,3 +110,38 @@ where
             .fold(T::splat(0.0), |acc, v| acc + v.covariogram(h))
     }
 }
+
+#[cfg(test)]
+mod test {
+    use nalgebra::Vector3;
+
+    use super::*;
+
+    #[test]
+    fn composite_variogram() {
+        let spherical = VariogramType::Spherical(SphericalVariogram::<f32>::new(
+            Vector3::new(1.0, 1.0, 1.0),
+            1.0,
+            UnitQuaternion::identity(),
+        ));
+
+        let composite = CompositeVariogram::new(vec![spherical.clone()]);
+
+        //check if composite variogram is equal to spherical variogram
+        assert!(composite.c_0() == spherical.c_0());
+
+        assert!(
+            composite.covariogram(Vector3::new(0.5, 0.5, 0.5))
+                == spherical.covariogram(Vector3::new(0.5, 0.5, 0.5))
+        );
+
+        assert!(
+            composite.variogram(Vector3::new(1.0, 1.0, 1.0))
+                == spherical.variogram(Vector3::new(1.0, 1.0, 1.0))
+        );
+        assert!(
+            composite.covariogram(Vector3::new(1.0, 1.0, 1.0))
+                == spherical.covariogram(Vector3::new(1.0, 1.0, 1.0))
+        );
+    }
+}

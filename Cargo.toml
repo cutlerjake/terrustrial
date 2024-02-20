@@ -16,9 +16,9 @@ packed = ["simba", "simba/packed_simd"]
 
 [dependencies]
 approx = "0.5.1"
-faer = "0.16.0"
-faer-core = "0.16.0"
-faer-cholesky = "0.16.0"
+faer = "0.17.1"
+faer-core = "0.17.1"
+faer-cholesky = "0.17.1"
 nalgebra = { version = "0.32.3", features = ["std"] }
 ndarray = "0.15.6"
 num-traits = "0.2.15"
