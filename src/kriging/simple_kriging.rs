@@ -15,7 +15,7 @@ use num_traits::Float;
 use rayon::prelude::*;
 use simba::simd::SimdPartialOrd;
 
-use super::KrigingSystem;
+use super::{ConditioningParams, KrigingSystem};
 
 pub trait SupportInterface {
     fn center(&self) -> Point3<f32>;
@@ -238,6 +238,7 @@ impl SupportInterface for Vec<Point3<f32>> {
 }
 
 impl SKBuilder for SKVolumeSupportBuilder {
+    //TODO: If use a slice instread
     type Support = Vec<Point3<f32>>;
     fn build_cov_mat<'a, I, V, T>(cov_mat: &mut Mat<f32>, cond: I, vgram: &V)
     where
@@ -307,19 +308,6 @@ impl SKBuilder for SKVolumeSupportBuilder {
         <Self as SKBuilder>::Support: 'a,
     {
         todo!()
-    }
-}
-pub struct ConditioningParams {
-    pub max_n_cond: usize,
-    pub min_conditioned_octants: usize,
-}
-
-impl ConditioningParams {
-    pub fn new(max_n_cond: usize, min_conditioned_octants: usize) -> Self {
-        Self {
-            max_n_cond,
-            min_conditioned_octants,
-        }
     }
 }
 
@@ -671,7 +659,7 @@ where
         SKB: SKBuilder<Support = S::Shape>,
     {
         //construct kriging system
-        let kriging_system = SimpleKrigingSystem::new(self.query_params.max_n_cond * 8);
+        let kriging_system = SimpleKrigingSystem::new(self.query_params.max_octant * 8);
 
         kriging_points
             .par_iter()
@@ -785,7 +773,7 @@ mod tests {
             gdb.clone(),
             spherical_vgram,
             search_ellipsoid,
-            ConditioningParams::new(8, 1),
+            ConditioningParams::default(),
             mean,
         );
 

@@ -1,4 +1,4 @@
-use nalgebra::{SimdValue, Vector3};
+use nalgebra::{SimdValue, UnitQuaternion, Vector3};
 
 pub mod aniso_fitter;
 pub mod composite;
@@ -21,7 +21,7 @@ where
     fn covariogram(&self, h: T) -> T;
 }
 
-pub trait VariogramModel<T>
+pub trait VariogramModel<T>: Clone + Send
 where
     T: SimdValue<Element = f32> + Copy,
 {
@@ -31,4 +31,5 @@ where
     fn c_0(&self) -> <T as SimdValue>::Element;
     fn variogram(&self, h: Vector3<T>) -> T;
     fn covariogram(&self, h: Vector3<T>) -> T;
+    fn set_orientation(&mut self, orientation: UnitQuaternion<T>);
 }

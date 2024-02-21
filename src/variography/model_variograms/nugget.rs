@@ -1,4 +1,4 @@
-use nalgebra::{SimdRealField, SimdValue, Vector3};
+use nalgebra::{SimdRealField, SimdValue, UnitQuaternion, Vector3};
 use simba::simd::WideF32x8;
 
 use super::VariogramModel;
@@ -53,5 +53,10 @@ where
     #[inline(always)]
     fn covariogram(&self, h: Vector3<T>) -> T {
         self.nugget - self.variogram(h)
+    }
+
+    #[inline(always)]
+    fn set_orientation(&mut self, _orientation: UnitQuaternion<T>) {
+        // Do nothing
     }
 }

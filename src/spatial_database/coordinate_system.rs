@@ -58,6 +58,14 @@ where
         self.world_to_local = self.local_to_world.inverse();
     }
 
+    //set the rotation of the coordinate system
+    pub fn set_rotation(&mut self, quat: UnitQuaternion<T>) {
+        self.rotation = quat;
+        self.inverse_rotation = quat.inverse();
+        self.local_to_world = Isometry::from_parts(self.translation, self.rotation);
+        self.world_to_local = self.local_to_world.inverse();
+    }
+
     /// Create a new coordinate system from an origin and euler angles
     pub fn from_origin_and_euler_angles(origin: Point3<T>, roll: T, pitch: T, yaw: T) -> Self {
         //create rotation quaternion from euler angles

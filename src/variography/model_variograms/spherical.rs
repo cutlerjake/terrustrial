@@ -92,6 +92,11 @@ where
     fn covariogram(&self, h: Vector3<T>) -> T {
         self.sill - self.variogram(h)
     }
+
+    #[inline(always)]
+    fn set_orientation(&mut self, orientation: UnitQuaternion<T>) {
+        self.rotation = orientation.inverse();
+    }
 }
 
 #[cfg(test)]

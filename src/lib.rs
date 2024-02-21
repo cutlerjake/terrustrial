@@ -2,6 +2,7 @@ pub mod declustering;
 pub mod decomposition;
 pub mod geometry;
 pub mod kriging;
+pub mod node_providers;
 pub mod simulation;
 pub mod spatial_database;
 pub mod variography;

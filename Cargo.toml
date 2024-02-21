@@ -50,6 +50,7 @@ argmin-math = { version = "0.3", features = [
     "ndarray_latest-serde",
     "nalgebra_latest-serde",
 ] }
+permutation = "0.4.1"
 #Fails to build with rust 1.73 due to packed_simd_2 dependency
 #simply updates dependency to packed_simd 0.3.9
 #subscribed to merge request on github, remove when merged

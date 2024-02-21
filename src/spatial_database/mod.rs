@@ -6,7 +6,6 @@ use parry3d::bounding_volume::Aabb;
 pub mod coordinate_system;
 pub mod gridded_databases;
 pub mod normalized;
-pub mod qbvh;
 pub mod rtree_point_set;
 pub mod zero_mean;
 

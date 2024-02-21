@@ -52,6 +52,13 @@ where
             VariogramType::Nugget(v) => v.covariogram(h),
         }
     }
+
+    fn set_orientation(&mut self, orientation: UnitQuaternion<T>) {
+        match self {
+            VariogramType::Spherical(v) => v.set_orientation(orientation),
+            VariogramType::Nugget(_) => {}
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -108,6 +115,12 @@ where
         self.variograms
             .iter()
             .fold(T::splat(0.0), |acc, v| acc + v.covariogram(h))
+    }
+
+    fn set_orientation(&mut self, orientation: UnitQuaternion<T>) {
+        for v in self.variograms.iter_mut() {
+            v.set_orientation(orientation);
+        }
     }
 }
 

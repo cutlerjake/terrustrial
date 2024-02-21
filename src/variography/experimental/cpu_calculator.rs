@@ -176,12 +176,13 @@ mod test {
         }
         let mut ind = (0..coords.len()).collect::<Vec<_>>();
         let mut rng = thread_rng();
+        let tags = (0..coords.len()).collect::<Vec<_>>();
         for _ in 0..100 {
             ind.shuffle(&mut rng);
 
             let shuffled_coords = ind.iter().map(|&i| coords[i]).collect::<Vec<_>>();
             let shuffled_values = ind.iter().map(|&i| values[i]).collect::<Vec<_>>();
-            let point_set = PointSet::new(shuffled_coords, shuffled_values);
+            let point_set = PointSet::new(shuffled_coords, shuffled_values, tags.clone());
             let quat = UnitQuaternion::identity();
 
             let lag_lb = (0..15).map(|i| i as f32 * 10f32).collect::<Vec<_>>();

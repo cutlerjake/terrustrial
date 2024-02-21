@@ -2,10 +2,11 @@ use crate::decomposition::lu::LUSystem;
 use crate::decomposition::lu::MiniLUSystem;
 use crate::geometry::ellipsoid::Ellipsoid;
 use crate::geometry::Geometry;
+use crate::node_providers::NodeProvider;
 use crate::spatial_database::ConditioningProvider;
 use crate::variography::model_variograms::VariogramModel;
-use indicatif::ParallelProgressIterator;
 use nalgebra::Point3;
+use nalgebra::UnitQuaternion;
 use rstar::primitives::GeomWithData;
 use rstar::RTree;
 use rstar::RTreeObject;
@@ -14,78 +15,58 @@ use simba::simd::SimdPartialOrd;
 use simba::simd::SimdRealField;
 use simba::simd::SimdValue;
 
-use super::simple_kriging::ConditioningParams;
 use super::simple_kriging::SKBuilder;
 use super::simple_kriging::SupportInterface;
 use super::simple_kriging::SupportTransform;
-use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
+use crate::kriging::ConditioningParams;
+use rayon::prelude::ParallelIterator;
 
 #[derive(Clone, Copy, Debug)]
-pub struct GSKParameters {
+pub struct GSKSystemParameters {
     pub max_group_size: usize,
-    pub max_cond_data: usize,
-    pub min_conditioned_octants: usize,
 }
 
-pub struct GSK<S, V, VT>
-where
-    S: ConditioningProvider<Ellipsoid, f32, ConditioningParams> + Sync + std::marker::Send,
-    V: VariogramModel<VT>,
-    VT: SimdPartialOrd + SimdRealField + SimdValue<Element = f32> + Copy,
-{
-    conditioning_data: S,
-    variogram_model: V,
-    search_ellipsoid: Ellipsoid,
-    parameters: GSKParameters,
-    phantom_v_type: std::marker::PhantomData<VT>,
+pub struct GSK {
+    system_params: GSKSystemParameters,
 }
 
-impl<S, V, VT> GSK<S, V, VT>
-where
-    S: ConditioningProvider<Ellipsoid, f32, ConditioningParams> + Sync + std::marker::Send,
-    V: VariogramModel<VT> + std::marker::Sync,
-    VT: SimdPartialOrd + SimdRealField + SimdValue<Element = f32> + Copy,
-{
-    pub fn new(
-        conditioning_data: S,
+impl GSK {
+    pub fn new(system_params: GSKSystemParameters) -> Self {
+        Self { system_params }
+    }
+
+    pub fn estimate<SKB, MS, S, V, VT>(
+        &self,
+        conditioning_data: &S,
+        conditioning_params: &ConditioningParams,
         variogram_model: V,
         search_ellipsoid: Ellipsoid,
-        parameters: GSKParameters,
-    ) -> Self {
-        Self {
-            conditioning_data,
-            variogram_model,
-            search_ellipsoid,
-            parameters,
-            phantom_v_type: std::marker::PhantomData,
-        }
-    }
-    pub fn estimate<SKB, MS>(&self, groups: &Vec<Vec<SKB::Support>>) -> Vec<f32>
+        groups: &impl NodeProvider<Support = SKB::Support>,
+    ) -> Vec<f32>
     where
         SKB: SKBuilder,
+        S: ConditioningProvider<Ellipsoid, f32, ConditioningParams> + Sync + std::marker::Send,
+        V: VariogramModel<VT> + std::marker::Sync,
+        VT: SimdPartialOrd + SimdRealField + SimdValue<Element = f32> + Copy,
         S::Shape: SupportTransform<SKB::Support>,
-        //SKB::Support: SupportTransform<S::Shape>,
-        //S::Shape: SupportTransform<NewSupport = SKB::Support>,
         <SKB as SKBuilder>::Support: SupportInterface, // why do I need this the trait already requires this?!?!?
-        SKB::Support: Sync,
+        // SKB::Support: Sync,
         MS: MiniLUSystem,
     {
         let system = LUSystem::new(
-            self.parameters.max_group_size,
-            (self.parameters.max_cond_data) * 8,
-        );
-
-        let cond_params = ConditioningParams::new(
-            self.parameters.max_cond_data,
-            self.parameters.min_conditioned_octants,
+            self.system_params.max_group_size,
+            conditioning_params.max_n_cond,
         );
 
         groups
-            .par_iter()
-            .progress()
+            .groups_and_orientations()
             .map_with(
-                (system.clone(), self.search_ellipsoid.clone()),
-                |(local_system, ellipsoid), group| {
+                (
+                    system.clone(),
+                    search_ellipsoid.clone(),
+                    variogram_model.clone(),
+                ),
+                |(local_system, ellipsoid, vgram), (group, orientation)| {
                     //get center of group
                     let center = group.iter().fold(Point3::<f32>::origin(), |mut acc, x| {
                         acc.coords += x.center().coords;
@@ -94,10 +75,20 @@ where
 
                     //translate search ellipsoid to group center
                     ellipsoid.translate_to(&center);
+
+                    //orient ellipsoid
+                    if conditioning_params.orient_search {
+                        ellipsoid.coordinate_system.set_rotation(orientation);
+                    }
+
+                    //orient variogram
+                    if conditioning_params.orient_variogram {
+                        vgram.set_orientation(UnitQuaternion::splat(orientation));
+                    }
+
                     //get nearest points and values
-                    let (_, cond_values, cond_points, sufficiently_conditioned) = self
-                        .conditioning_data
-                        .query(&center, ellipsoid, &cond_params);
+                    let (_, cond_values, cond_points, sufficiently_conditioned) =
+                        conditioning_data.query(&center, ellipsoid, conditioning_params);
 
                     if sufficiently_conditioned {
                         //convert points to support
@@ -109,8 +100,8 @@ where
                         //build kriging system for point
                         let mut mini_system = local_system.create_mini_system::<V, VT, SKB, MS>(
                             cond_points.as_slice(),
-                            group.as_slice(),
-                            &self.variogram_model,
+                            group,
+                            vgram,
                         );
 
                         mini_system.populate_cond_values_est(cond_values.as_slice());
@@ -217,6 +208,7 @@ mod test {
             NegativeFilteredMiniLUSystem,
         },
         kriging::simple_kriging::{SKPointSupportBuilder, SKVolumeSupportBuilder},
+        node_providers::{point_group::PointGroupProvider, volume_group::VolumeGroupProvider},
         spatial_database::{
             coordinate_system::CoordinateSystem, rtree_point_set::point_set::PointSet,
             zero_mean::ZeroMeanTransform, DiscretiveVolume,
@@ -241,8 +233,8 @@ mod test {
         let vgram_rot = UnitQuaternion::identity();
         let range = Vector3::new(
             WideF32x8::splat(200.0),
-            WideF32x8::splat(200.0),
-            WideF32x8::splat(200.0),
+            WideF32x8::splat(50.0),
+            WideF32x8::splat(50.0),
         );
         let sill = WideF32x8::splat(1.0f32);
 
@@ -253,18 +245,18 @@ mod test {
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(
             200f32,
-            200f32,
-            200f32,
+            50f32,
+            50f32,
             CoordinateSystem::new(Translation3::new(0.0, 0.0, 0.0), UnitQuaternion::identity()),
         );
 
         // create a gsk system
-        let parameters = GSKParameters {
+        let parameters = GSKSystemParameters {
             max_group_size: 125,
-            max_cond_data: 25,
-            min_conditioned_octants: 1,
         };
-        let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
+
+        let gsk = GSK::new(parameters);
+        // let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
 
         println!("Reading Target Data");
         let targ = PointSet::<f32>::from_csv_index(
@@ -299,10 +291,23 @@ mod test {
 
         let (groups, inds) = optimize_groups(all_points.as_slice(), 1f32, 1f32, 1f32, 5, 5, 5);
 
+        let orientations = groups
+            .iter()
+            .map(|group| {
+                UnitQuaternion::from_euler_angles(0.0, 0.0, (group.center().x * 0.1).to_radians())
+            })
+            .collect::<Vec<_>>();
+        let node_provider = PointGroupProvider::from_groups(groups.clone(), orientations);
+        let mut params = ConditioningParams::default();
+        params.max_n_cond = 4;
         let time1 = std::time::Instant::now();
         let values = gsk
-            .estimate::<SKPointSupportBuilder, NegativeFilteredMiniLUSystem<MiniLUOKSystem>>(
-                &groups,
+            .estimate::<SKPointSupportBuilder, NegativeFilteredMiniLUSystem<MiniLUOKSystem>, _, _, _>(
+                &cond,
+                &params,
+                spherical_vgram,
+                search_ellipsoid,
+                &node_provider,
             );
         let time2 = std::time::Instant::now();
         println!("Time: {:?}", (time2 - time1).as_secs());
@@ -355,7 +360,7 @@ mod test {
 
         let mut out = File::create("./test_results/lu_ok.csv").unwrap();
         //write header
-        let _ = out.write_all("X,Y,Z,XS,YS,ZS,V\n".as_bytes());
+        let _ = out.write_all("X,Y,Z,DX,DY,DZ,V\n".as_bytes());
 
         //write each row
 
@@ -400,12 +405,11 @@ mod test {
         );
 
         // create a gsk system
-        let parameters = GSKParameters {
+        let parameters = GSKSystemParameters {
             max_group_size: 250,
-            max_cond_data: 100,
-            min_conditioned_octants: 1,
         };
-        let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
+        let gsk = GSK::new(parameters);
+        // let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
 
         println!("Reading Target Data");
         let targ = PointSet::<f32>::from_csv_index(
@@ -439,9 +443,13 @@ mod test {
             group.clear();
         }
 
+        let node_provider = PointGroupProvider::from_groups(
+            groups.clone(),
+            vec![UnitQuaternion::identity(); groups.len()],
+        );
         let time1 = std::time::Instant::now();
         let values =
-            gsk.estimate::<SKPointSupportBuilder, ModifiedMiniLUSystem<MiniLUSKSystem, AverageTransfrom>>(&groups);
+            gsk.estimate::<SKPointSupportBuilder, ModifiedMiniLUSystem<MiniLUSKSystem, AverageTransfrom>, _, _, _>(&cond, &Default::default(), spherical_vgram, search_ellipsoid, &node_provider);
         let time2 = std::time::Instant::now();
         println!("Time: {:?}", (time2 - time1).as_secs());
         println!(
@@ -526,12 +534,12 @@ mod test {
 
         // create a gsk system
         let group_size = 10;
-        let parameters = GSKParameters {
+        let parameters = GSKSystemParameters {
             max_group_size: group_size,
-            max_cond_data: 20,
-            min_conditioned_octants: 1,
         };
-        let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
+
+        let gsk = GSK::new(parameters);
+        // let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
 
         println!("Reading Target Data");
         let targ = PointSet::<f32>::from_csv_index(
@@ -570,8 +578,18 @@ mod test {
             }
         }
 
+        let node_provider = VolumeGroupProvider::from_groups(
+            groups.clone(),
+            vec![UnitQuaternion::identity(); groups.len()],
+        );
         let time1 = std::time::Instant::now();
-        let values = gsk.estimate::<SKVolumeSupportBuilder, MiniLUOKSystem>(&groups);
+        let values = gsk.estimate::<SKVolumeSupportBuilder, MiniLUOKSystem, _, _, _>(
+            &cond,
+            &Default::default(),
+            spherical_vgram,
+            search_ellipsoid,
+            &node_provider,
+        );
         let time2 = std::time::Instant::now();
         println!("Time: {:?}", (time2 - time1).as_secs());
         println!(
@@ -621,181 +639,6 @@ mod test {
                 format!(
                     "{},{},{},{},{},{},{}\n",
                     point.x, point.y, point.z, 5, 5, 10, value
-                )
-                .as_bytes(),
-            );
-        }
-    }
-
-    #[test]
-    fn gsk_large_model() {
-        // create a gridded database from a csv file (walker lake)
-        println!("Reading Cond Data");
-        let mut cond = PointSet::from_csv_index(
-            "C:\\GitRepos\\terrustrial\\data\\point_set_filtered.csv",
-            "X",
-            "Y",
-            "Z",
-            "Value",
-        )
-        .expect("Failed to create gdb");
-
-        //clamp value between 0 and 10
-        cond.data.iter_mut().for_each(|x| {
-            if *x > 10.0 {
-                *x = 10.0;
-            } else if *x < 0.0 {
-                *x = 0.0;
-            }
-        });
-        //
-
-        let vgram_rot = UnitQuaternion::identity();
-        let range = Vector3::new(
-            WideF32x8::splat(40.0),
-            WideF32x8::splat(40.0),
-            WideF32x8::splat(40.0),
-        );
-        let sill = WideF32x8::splat(1.0f32);
-
-        let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
-
-        // create search ellipsoid
-        let search_ellipsoid = Ellipsoid::new(
-            40f32,
-            40f32,
-            40f32,
-            CoordinateSystem::new(Translation3::new(0.0, 0.0, 0.0), UnitQuaternion::identity()),
-        );
-
-        // create a gsk system
-        let group_size = 512;
-        let parameters = GSKParameters {
-            max_group_size: group_size,
-            max_cond_data: 5,
-            min_conditioned_octants: 5,
-        };
-        let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
-
-        println!("Reading Target Data");
-        let mut reader =
-            csv::Reader::from_path("C:\\GitRepos\\terrustrial\\data\\new_model.csv").unwrap();
-
-        let mut aabbs = Vec::new();
-        for record in reader.deserialize() {
-            let record: (f32, f32, f32, f32, f32, f32, f32) = record.unwrap();
-            aabbs.push(Aabb::new(
-                Point3::new(record.0, record.1, record.2),
-                Point3::new(
-                    record.0 + record.3,
-                    record.1 + record.4,
-                    record.2 + record.5,
-                ),
-            ));
-        }
-
-        println!("Discretizing");
-        //discretize each block
-        let dx = 0.9f32;
-        let dy = 0.9f32;
-        let dz = 0.9f32;
-
-        let mut block_inds = Vec::new();
-        let points = aabbs
-            .iter()
-            .enumerate()
-            .map(|(i, x)| {
-                let disc_points = x.discretize(dx, dy, dz);
-                block_inds.append(vec![i; disc_points.len()].as_mut());
-                disc_points
-            })
-            .flatten()
-            .collect::<Vec<_>>();
-
-        println!("Optimizing groups");
-
-        let (groups, point_inds) = optimize_groups(points.as_slice(), dx, dy, dz, 8, 8, 8);
-
-        let time1 = std::time::Instant::now();
-        let values = gsk.estimate::<SKPointSupportBuilder, MiniLUOKSystem>(&groups);
-        let time2 = std::time::Instant::now();
-        println!("Time: {:?}", (time2 - time1).as_secs());
-        println!(
-            "Points per minute: {}",
-            values.len() as f32 / (time2 - time1).as_secs_f32() * 60.0
-        );
-
-        println!(
-            "non nan values: {}",
-            values.iter().filter(|x| !x.is_nan()).count()
-        );
-
-        let block_values = values.iter().zip(point_inds.iter().flatten()).fold(
-            vec![vec![]; aabbs.len()],
-            |mut acc, (value, ind)| {
-                acc[block_inds[*ind]].push(*value);
-                acc
-            },
-        );
-
-        let avg_block_values = block_values
-            .iter()
-            .map(|x| x.iter().sum::<f32>() / x.len() as f32)
-            .collect::<Vec<_>>();
-
-        //save values to file for visualization
-        let mut out = File::create("./test_results/gsk_large_model.txt").unwrap();
-        let _ = out.write_all(b"surfs\n");
-        let _ = out.write_all(b"4\n");
-        let _ = out.write_all(b"x\n");
-        let _ = out.write_all(b"y\n");
-        let _ = out.write_all(b"z\n");
-        let _ = out.write_all(b"value\n");
-
-        for (point, value) in aabbs.iter().zip(avg_block_values.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-
-            let _ = out.write_all(
-                format!(
-                    "{} {} {} {}\n",
-                    point.mins.x, point.mins.y, point.mins.z, value
-                )
-                .as_bytes(),
-            );
-        }
-
-        let mut out = File::create("./test_results/gsk_large_model_cond_data.txt").unwrap();
-        let _ = out.write_all(b"surfs\n");
-        let _ = out.write_all(b"4\n");
-        let _ = out.write_all(b"x\n");
-        let _ = out.write_all(b"y\n");
-        let _ = out.write_all(b"z\n");
-        let _ = out.write_all(b"value\n");
-
-        for (point, value) in cond.points.iter().zip(cond.data.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out
-                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
-        }
-
-        let mut out = File::create("./test_results/gsk_large_model.csv").unwrap();
-        //write header
-        let _ = out.write_all("X,Y,Z,DX,DY,DZ,V\n".as_bytes());
-
-        //write each row
-
-        for (point, value) in aabbs.iter().zip(avg_block_values.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out.write_all(
-                format!(
-                    "{},{},{},{},{},{},{}\n",
-                    point.mins.x,
-                    point.mins.y,
-                    point.mins.z,
-                    point.maxs.x - point.mins.x,
-                    point.maxs.y - point.mins.y,
-                    point.maxs.z - point.mins.z,
-                    value
                 )
                 .as_bytes(),
             );

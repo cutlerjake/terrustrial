@@ -39,15 +39,27 @@ impl Ellipsoid {
         bbox.transform_by(&self.coordinate_system.local_to_world)
     }
 
-    /// Checks if ellipsoid contains a point (world coordinates)
-    pub fn contains(&self, point: &Point3<f32>) -> bool {
-        let point = self.coordinate_system.world_to_local.transform_point(point);
-
+    pub fn normalized_local_distance_sq(&self, point: &Point3<f32>) -> f32 {
         let x = point.x / self.a;
         let y = point.y / self.b;
         let z = point.z / self.c;
 
-        (x * x + y * y + z * z) <= 1.0
+        x * x + y * y + z * z
+    }
+
+    pub fn normalized_local_distance(&self, point: &Point3<f32>) -> f32 {
+        self.normalized_local_distance_sq(point).sqrt()
+    }
+
+    /// Checks if ellipsoid contains a point (world coordinates)
+    pub fn contains(&self, point: &Point3<f32>) -> bool {
+        let point = self.coordinate_system.world_to_local.transform_point(point);
+
+        self.normalized_local_distance_sq(&point) <= 1.0
+    }
+
+    pub fn contains_local_point(&self, point: &Point3<f32>) -> bool {
+        self.normalized_local_distance_sq(point) <= 1.0
     }
 
     //randomly rotate search ellipsoid
