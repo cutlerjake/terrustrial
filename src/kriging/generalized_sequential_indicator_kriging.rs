@@ -83,7 +83,7 @@ impl GSIK {
         conditioning_params: &ConditioningParams,
         variogram_models: Vec<V>,
         search_ellipsoid: Ellipsoid,
-        groups: &impl NodeProvider<Support = SKB::Support>,
+        groups: &(impl NodeProvider<Support = SKB::Support> + Sync),
     ) -> Vec<IKCPDF>
     where
         SKB: SKBuilder,
@@ -107,26 +107,26 @@ impl GSIK {
             });
 
             let gsk = GSK::new(self.system_params);
-            let estimates = gsk.estimate::<SKB, MS, _, _, _>(
-                &cond,
-                conditioning_params,
-                variogram_models[i].clone(),
-                search_ellipsoid.clone(),
-                groups,
-            );
+            // let estimates = gsk.estimate::<SKB, MS, _, _, _>(
+            //     &cond,
+            //     conditioning_params,
+            //     variogram_models[i].clone(),
+            //     search_ellipsoid.clone(),
+            //     groups,
+            // );
 
-            //update cpdfs
-            estimates.iter().enumerate().for_each(|(i, e)| {
-                if let Some(cdpf) = cpdfs.get_mut(i) {
-                    cdpf.p.push(*e);
-                    cdpf.x.push(*theshold);
-                } else {
-                    let mut cpdf = IKCPDF::with_capacity(thresholds.len());
-                    cpdf.p.push(*e);
-                    cpdf.x.push(*theshold);
-                    cpdfs.push(cpdf);
-                }
-            });
+            // //update cpdfs
+            // estimates.iter().enumerate().for_each(|(i, e)| {
+            //     if let Some(cdpf) = cpdfs.get_mut(i) {
+            //         cdpf.p.push(*e);
+            //         cdpf.x.push(*theshold);
+            //     } else {
+            //         let mut cpdf = IKCPDF::with_capacity(thresholds.len());
+            //         cpdf.p.push(*e);
+            //         cpdf.x.push(*theshold);
+            //         cpdfs.push(cpdf);
+            //     }
+            // });
         }
         cpdfs
     }

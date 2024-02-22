@@ -35,7 +35,7 @@ where
 }
 
 pub trait SKBuilder {
-    type Support: SupportInterface;
+    type Support: SupportInterface + Send + Sync;
 
     fn build_cov_mat<'a, I, V, T>(cov_mat: &mut Mat<f32>, cond: I, vgram: &V)
     where

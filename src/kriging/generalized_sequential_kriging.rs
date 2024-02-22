@@ -19,7 +19,7 @@ use super::simple_kriging::SKBuilder;
 use super::simple_kriging::SupportInterface;
 use super::simple_kriging::SupportTransform;
 use crate::kriging::ConditioningParams;
-use rayon::prelude::ParallelIterator;
+use rayon::prelude::*;
 
 #[derive(Clone, Copy, Debug)]
 pub struct GSKSystemParameters {
@@ -41,7 +41,7 @@ impl GSK {
         conditioning_params: &ConditioningParams,
         variogram_model: V,
         search_ellipsoid: Ellipsoid,
-        groups: &impl NodeProvider<Support = SKB::Support>,
+        groups: &(impl NodeProvider<Support = SKB::Support> + Sync),
     ) -> Vec<f32>
     where
         SKB: SKBuilder,
@@ -58,8 +58,9 @@ impl GSK {
             conditioning_params.max_n_cond,
         );
 
-        groups
-            .groups_and_orientations()
+        (0..groups.n_groups())
+            .into_par_iter()
+            .map(|group| (groups.get_group(group), groups.get_orientation(group)))
             .map_with(
                 (
                     system.clone(),
@@ -78,12 +79,12 @@ impl GSK {
 
                     //orient ellipsoid
                     if conditioning_params.orient_search {
-                        ellipsoid.coordinate_system.set_rotation(orientation);
+                        ellipsoid.coordinate_system.set_rotation(*orientation);
                     }
 
                     //orient variogram
                     if conditioning_params.orient_variogram {
-                        vgram.set_orientation(UnitQuaternion::splat(orientation));
+                        vgram.set_orientation(UnitQuaternion::splat(*orientation));
                     }
 
                     //get nearest points and values

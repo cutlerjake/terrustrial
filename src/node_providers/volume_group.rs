@@ -45,11 +45,26 @@ impl VolumeGroupProvider {
 impl NodeProvider for VolumeGroupProvider {
     type Support = Vec<Point3<f32>>;
 
-    fn groups_and_orientations(
-        &self,
-    ) -> impl ParallelIterator<Item = (&[Self::Support], UnitQuaternion<f32>)> {
-        (0..self.group_inds.len())
-            .into_par_iter()
-            .map(|group| (self.get_group(group), self.orientations[group]))
+    #[inline(always)]
+    fn n_groups(&self) -> usize {
+        self.group_inds.len()
     }
+
+    #[inline(always)]
+    fn get_group(&self, group: usize) -> &[Self::Support] {
+        self.get_group(group)
+    }
+
+    #[inline(always)]
+    fn get_orientation(&self, group: usize) -> &UnitQuaternion<f32> {
+        &self.orientations[group]
+    }
+
+    // fn groups_and_orientations(
+    //     &self,
+    // ) -> impl ParallelIterator<Item = (&[Self::Support], UnitQuaternion<f32>)> {
+    //     (0..self.group_inds.len())
+    //         .into_par_iter()
+    //         .map(|group| (self.get_group(group), self.orientations[group]))
+    // }
 }
