@@ -1,5 +1,7 @@
 use nalgebra::{Point3, UnitQuaternion};
 
+use crate::FORWARD;
+
 pub struct EllipticalCylindar {
     pub p1: Point3<f32>,
     pub length: f32,
@@ -30,7 +32,7 @@ impl EllipticalCylindar {
 
         let min = Point3::new(self.p1.x - offset, self.p1.y - offset, self.p1.z - offset);
 
-        let cylinder_axis = self.orientation * nalgebra::Vector3::x() * self.length;
+        let cylinder_axis = self.orientation * FORWARD.into_inner() * self.length;
 
         let max = Point3::new(
             self.p1.x + cylinder_axis.x + offset,
@@ -42,7 +44,7 @@ impl EllipticalCylindar {
     }
 
     pub fn contains_point(&self, point: Point3<f32>) -> bool {
-        let cylinder_axis = self.orientation * nalgebra::Vector3::x() * self.length;
+        let cylinder_axis = self.orientation * FORWARD.into_inner() * self.length;
         let length_sq = cylinder_axis.dot(&cylinder_axis);
 
         let p1 = self.p1;
@@ -56,7 +58,7 @@ impl EllipticalCylindar {
 
         let cylinder_aligned_point = self.orientation.inverse_transform_point(&v.into());
 
-        if cylinder_aligned_point.y * cylinder_aligned_point.y / (self.a * self.a)
+        if cylinder_aligned_point.x * cylinder_aligned_point.x / (self.a * self.a)
             + cylinder_aligned_point.z * cylinder_aligned_point.z / (self.b + self.b)
             > 1f32
         {

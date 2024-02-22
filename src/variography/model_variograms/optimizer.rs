@@ -87,7 +87,8 @@ impl VariogramOptimizer {
             particle.position[1],
             particle.position[2],
         );
-        let axis = quat * Vector3::x_axis();
+        // let axis = quat * Vector3::x_axis();
+        let axis = quat * FORWARD;
 
         //find intermiediate direction
         let perps = gen_perp_fan(axis, 100);
@@ -96,8 +97,7 @@ impl VariogramOptimizer {
         let perp_quats = perps
             .iter()
             .map(|p| {
-                UnitQuaternion::rotation_between(&p.try_cast::<f32>().unwrap(), &Vector3::x_axis())
-                    .unwrap()
+                UnitQuaternion::rotation_between(&p.try_cast::<f32>().unwrap(), &FORWARD).unwrap()
             })
             .collect::<Vec<_>>();
 
@@ -137,11 +137,8 @@ impl VariogramOptimizer {
             Unit::new_unchecked(Quaternion::from_vector(
                 perp_quats[max_range].coords.try_cast::<f32>().unwrap(),
             )),
-            UnitQuaternion::rotation_between(
-                &minor_axis.try_cast::<f32>().unwrap(),
-                &Vector3::x_axis(),
-            )
-            .unwrap(),
+            UnitQuaternion::rotation_between(&minor_axis.try_cast::<f32>().unwrap(), &FORAWRD)
+                .unwrap(),
         ];
 
         let exp_vgram = self.params.calculate_for_orientations(rotations.as_slice());

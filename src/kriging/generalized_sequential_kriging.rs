@@ -230,10 +230,14 @@ mod test {
 
         //
 
-        let vgram_rot = UnitQuaternion::identity();
+        let vgram_rot = UnitQuaternion::from_euler_angles(
+            WideF32x8::splat(0.0),
+            WideF32x8::splat(0.0),
+            WideF32x8::splat(-90f32.to_radians()),
+        );
         let range = Vector3::new(
-            WideF32x8::splat(200.0),
             WideF32x8::splat(50.0),
+            WideF32x8::splat(200.0),
             WideF32x8::splat(50.0),
         );
         let sill = WideF32x8::splat(1.0f32);
@@ -247,7 +251,10 @@ mod test {
             200f32,
             50f32,
             50f32,
-            CoordinateSystem::new(Translation3::new(0.0, 0.0, 0.0), UnitQuaternion::identity()),
+            CoordinateSystem::new(
+                Translation3::new(0.0, 0.0, 0.0),
+                UnitQuaternion::from_euler_angles(0.0, 0.0, -90f32.to_radians()),
+            ),
         );
 
         // create a gsk system

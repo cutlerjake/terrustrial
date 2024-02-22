@@ -32,19 +32,22 @@ impl Ellipsoid {
 
     /// Computes the bounding box of the ellipsoid in world coordinates
     pub fn bounding_box(&self) -> Aabb {
-        let mins = Point3::new(-self.a, -self.b, -self.c);
-        let maxs = Point3::new(self.a, self.b, self.c);
+        // let mins = Point3::new(-self.a, -self.b, -self.c);
+        // let maxs = Point3::new(self.a, self.b, self.c);
+
+        let mins = Point3::new(-self.b, -self.a, -self.c);
+        let maxs = Point3::new(self.b, self.a, self.c);
 
         let bbox = Aabb::new(mins, maxs);
         bbox.transform_by(&self.coordinate_system.local_to_world)
     }
 
     pub fn normalized_local_distance_sq(&self, point: &Point3<f32>) -> f32 {
-        let x = point.x / self.a;
-        let y = point.y / self.b;
-        let z = point.z / self.c;
+        let u = point.y / self.a;
+        let v = point.x / self.b;
+        let w = point.z / self.c;
 
-        x * x + y * y + z * z
+        u * u + v * v + w * w
     }
 
     pub fn normalized_local_distance(&self, point: &Point3<f32>) -> f32 {

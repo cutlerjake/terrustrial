@@ -1,5 +1,7 @@
 use nalgebra::{Point3, UnitQuaternion};
 
+use crate::FORWARD;
+
 pub struct VariogramTolerance {
     pub p1: Point3<f32>,
     pub length: f32,
@@ -40,7 +42,7 @@ impl VariogramTolerance {
 
     pub fn offset_along_axis(&mut self, offset: f32) {
         // self.p1 += self.axis.scale(offset);
-        self.p1 += self.orientation * nalgebra::Vector3::x() * offset;
+        self.p1 += self.orientation * FORWARD.into_inner() * offset;
     }
 
     pub fn set_base(&mut self, base: Point3<f32>) {
@@ -54,7 +56,7 @@ impl VariogramTolerance {
 
         // let cylinder_axis = self.axis.scale(self.length);
 
-        let cylinder_axis = self.orientation * nalgebra::Vector3::x() * self.length;
+        let cylinder_axis = self.orientation * FORWARD.into_inner() * self.length;
 
         let max = Point3::new(
             self.p1.x + cylinder_axis.x + offset,
@@ -66,7 +68,7 @@ impl VariogramTolerance {
     }
 
     pub fn contains_point(&self, point: Point3<f32>) -> bool {
-        let cylinder_axis = self.orientation * nalgebra::Vector3::x() * self.length;
+        let cylinder_axis = self.orientation * FORWARD.into_inner() * self.length;
         let length_sq = cylinder_axis.dot(&cylinder_axis);
 
         let p1 = self.p1;
@@ -94,7 +96,7 @@ impl VariogramTolerance {
             axial_dist * self.b_tol.tan()
         };
 
-        if cylinder_aligned_point.y * cylinder_aligned_point.y / (a * a)
+        if cylinder_aligned_point.x * cylinder_aligned_point.x / (a * a)
             + cylinder_aligned_point.z * cylinder_aligned_point.z / (b * b)
             > 1f32
         {

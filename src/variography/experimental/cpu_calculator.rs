@@ -170,10 +170,11 @@ mod test {
         let mut values = Vec::new();
 
         for record in reader.deserialize() {
-            let (x, y, z, v): (f32, f32, f32, f32) = record.unwrap();
+            let (x, y, z, _dx, _dy, _dz, v): (f32, f32, f32, f32, f32, f32, f32) = record.unwrap();
             coords.push(Point3::new(x, y, z));
             values.push(v);
         }
+        println!("Values: {:?}", values);
         let mut ind = (0..coords.len()).collect::<Vec<_>>();
         let mut rng = thread_rng();
         let tags = (0..coords.len()).collect::<Vec<_>>();
@@ -199,8 +200,8 @@ mod test {
 
             for vgram in vgrams.iter() {
                 println!("{:?}", vgram.semivariance);
-                break;
             }
+            println!("");
         }
     }
 }
