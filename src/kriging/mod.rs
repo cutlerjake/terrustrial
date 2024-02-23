@@ -31,8 +31,9 @@ pub struct ConditioningParams {
     //limit number of points from same source group
     pub same_source_group_limit: usize,
 
-    //dynamic orientation
+    //dynamic orientation for seach ellipsoid
     pub orient_search: bool,
+    //dynamic orientation for variogram
     pub orient_variogram: bool,
 }
 
@@ -92,7 +93,7 @@ impl Default for ConditioningParams {
             min_conditioned_octants: 1,
             clip_h: vec![],
             clip_range: vec![],
-            valid_value_range: [f32::MIN, f32::MAX],
+            valid_value_range: [f32::NEG_INFINITY, f32::INFINITY],
             same_source_group_limit: usize::MAX,
             orient_search: false,
             orient_variogram: false,
