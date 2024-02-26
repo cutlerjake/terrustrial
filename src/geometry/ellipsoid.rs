@@ -8,7 +8,7 @@ use crate::spatial_database::coordinate_system::CoordinateSystem;
 
 use super::Geometry;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Ellipsoid {
     pub a: f32,
     pub b: f32,

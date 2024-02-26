@@ -18,7 +18,7 @@ impl GridSpacing {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct CoordinateSystem<T>
 where
     T: Float,

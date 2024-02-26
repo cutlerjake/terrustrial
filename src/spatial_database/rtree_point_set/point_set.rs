@@ -181,14 +181,14 @@ impl<'b> ConditioningDataCollector<'b> {
         if let Some(ind) = self.source_tag.iter().position(|&x| x == tag) {
             if self.source_count[ind] < self.cond_params.same_source_group_limit as u32 {
                 self.source_count[ind] += 1;
-                return true;
+                true
             } else {
-                return false;
+                false
             }
         } else {
             self.source_tag.push(tag);
             self.source_count.push(1);
-            return true;
+            true
         }
     }
 

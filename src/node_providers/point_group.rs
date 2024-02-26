@@ -1,5 +1,4 @@
 use nalgebra::{Point3, UnitQuaternion};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::NodeProvider;
 

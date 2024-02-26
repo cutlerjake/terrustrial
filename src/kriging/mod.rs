@@ -38,6 +38,7 @@ pub struct ConditioningParams {
 }
 
 impl ConditioningParams {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         max_n_cond: usize,
         min_n_cond: usize,

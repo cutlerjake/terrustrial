@@ -1,5 +1,4 @@
 use nalgebra::UnitQuaternion;
-use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 pub mod point_group;
 pub mod volume_group;
