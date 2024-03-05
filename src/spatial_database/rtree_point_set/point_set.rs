@@ -135,6 +135,7 @@ pub struct ConditioningDataCollector<'b> {
     pub octant_norm_dists: Vec<Vec<f32>>,
     pub octant_values: Vec<Vec<f32>>,
     pub octant_inds: Vec<Vec<u32>>,
+    pub octant_tags: Vec<Vec<u32>>,
     pub octant_counts: Vec<u32>,
     pub full_octants: u8,
     pub conditioned_octants: u8,
@@ -160,6 +161,9 @@ impl<'b> ConditioningDataCollector<'b> {
                 .map(|_| Vec::with_capacity(octant_max))
                 .collect::<Vec<_>>(),
             octant_inds: (0..8)
+                .map(|_| Vec::with_capacity(octant_max))
+                .collect::<Vec<_>>(),
+            octant_tags: (0..8)
                 .map(|_| Vec::with_capacity(octant_max))
                 .collect::<Vec<_>>(),
             octant_counts: vec![0; 8],
@@ -228,6 +232,7 @@ impl<'b> ConditioningDataCollector<'b> {
         self.octant_inds[octant].push(ind);
         self.octant_norm_dists[octant].push(dist);
         self.octant_values[octant].push(clipped_value);
+        self.octant_tags[octant].push(tag);
         self.octant_counts[octant] += 1;
 
         if self.octant_points[octant].len() == 1 {
@@ -237,13 +242,32 @@ impl<'b> ConditioningDataCollector<'b> {
 
     #[inline(always)]
     pub fn remove_point(&mut self, octant: usize, ind: usize) {
-        let tag = self.source_tag[ind];
+        let tag = self.octant_tags[octant][ind];
         self.octant_points[octant].swap_remove(ind);
         self.octant_inds[octant].swap_remove(ind);
         self.octant_norm_dists[octant].swap_remove(ind);
         self.octant_values[octant].swap_remove(ind);
         self.octant_counts[octant] -= 1;
         self.decrement_tag(tag);
+    }
+
+    #[inline(always)]
+    pub fn can_swap_insert(&self, octant: usize, ind: usize, tag: u32) -> bool {
+        let old_tag = self.octant_tags[octant][ind];
+
+        // If tag is the same as the old tag we can insert.
+        // Gauranteed to not violate same_source_group_limit since we are swapping.
+        if old_tag == tag {
+            return true;
+        }
+
+        // If tag is different we can insert if the new tag is not at the limit.
+        // If new tag does not exist we can insert.
+        let Some(tag_ind) = self.source_tag.iter().position(|&x| x == tag) else {
+            return true;
+        };
+
+        self.source_count[tag_ind] < self.cond_params.same_source_group_limit as u32
     }
 
     #[inline(always)]
@@ -288,7 +312,7 @@ impl<'b> ConditioningDataCollector<'b> {
         }
 
         if let Some((ind, max_dist)) = self.max_octant_dist(octant as usize) {
-            if h < max_dist {
+            if h < max_dist && self.can_swap_insert(octant as usize, ind, tag) {
                 self.remove_point(octant as usize, ind);
                 self.insert_point(octant as usize, point, value, h, ind as u32, tag);
                 return;

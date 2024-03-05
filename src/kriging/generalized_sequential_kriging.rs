@@ -234,7 +234,7 @@ mod test {
         let vgram_rot = UnitQuaternion::from_euler_angles(
             WideF32x8::splat(0.0),
             WideF32x8::splat(0.0),
-            WideF32x8::splat(-90f32.to_radians()),
+            WideF32x8::splat(0f32.to_radians()),
         );
         let range = Vector3::new(
             WideF32x8::splat(50.0),
@@ -249,19 +249,17 @@ mod test {
 
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(
-            200f32,
             50f32,
+            200f32,
             50f32,
             CoordinateSystem::new(
                 Translation3::new(0.0, 0.0, 0.0),
-                UnitQuaternion::from_euler_angles(0.0, 0.0, -90f32.to_radians()),
+                UnitQuaternion::from_euler_angles(0.0, 0.0, 0f32.to_radians()),
             ),
         );
 
         // create a gsk system
-        let parameters = GSKSystemParameters {
-            max_group_size: 125,
-        };
+        let parameters = GSKSystemParameters { max_group_size: 8 };
 
         let gsk = GSK::new(parameters);
         // let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
@@ -297,7 +295,7 @@ mod test {
             .flatten()
             .collect::<Vec<_>>();
 
-        let (groups, inds) = optimize_groups(all_points.as_slice(), 1f32, 1f32, 1f32, 5, 5, 5);
+        let (groups, inds) = optimize_groups(all_points.as_slice(), 5f32, 5f32, 10f32, 2, 2, 2);
 
         let orientations = groups
             .iter()
@@ -305,9 +303,31 @@ mod test {
                 UnitQuaternion::from_euler_angles(0.0, 0.0, (group.center().x * 0.1).to_radians())
             })
             .collect::<Vec<_>>();
+
+        //write orientations to fileq
+        let mut csv_str = "x,y,z,ang1,ang2,ang3".to_string();
+        for (point, orientation) in groups.iter().zip(orientations.iter()) {
+            csv_str.push_str(&format!(
+                "{},{},{},{},{},{}\n",
+                point.center().x,
+                point.center().y,
+                point.center().z,
+                orientation.euler_angles().0,
+                orientation.euler_angles().1,
+                orientation.euler_angles().2
+            ));
+        }
+
+        let _ = std::fs::write("./test_results/lu_ok_orientations.csv", csv_str);
+
         let node_provider = PointGroupProvider::from_groups(groups.clone(), orientations);
         let mut params = ConditioningParams::default();
-        params.max_n_cond = 4;
+        params.orient_search = true;
+        params.orient_variogram = true;
+        params.max_n_cond = 12;
+        params.valid_value_range = [0.0, f32::INFINITY];
+
+        println!("params: {:#?}", params);
         let time1 = std::time::Instant::now();
         let values = gsk
             .estimate::<SKPointSupportBuilder, NegativeFilteredMiniLUSystem<MiniLUOKSystem>, _, _, _>(
@@ -352,18 +372,14 @@ mod test {
                 .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
         }
 
-        let mut out = File::create("./test_results/lu_ok_cond_data.txt").unwrap();
-        let _ = out.write_all(b"surfs\n");
-        let _ = out.write_all(b"4\n");
-        let _ = out.write_all(b"x\n");
-        let _ = out.write_all(b"y\n");
-        let _ = out.write_all(b"z\n");
-        let _ = out.write_all(b"value\n");
+        let mut out = File::create("./test_results/lu_ok_cond_data.csv").unwrap();
+
+        let _ = out.write(b"x,y,z,v\n");
 
         for (point, value) in cond.points.iter().zip(cond.data.iter()) {
             //println!("point: {:?}, value: {}", point, value);
             let _ = out
-                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+                .write_all(format!("{},{},{},{}\n", point.x, point.y, point.z, value).as_bytes());
         }
 
         let mut out = File::create("./test_results/lu_ok.csv").unwrap();
@@ -373,6 +389,144 @@ mod test {
         //write each row
 
         for (point, value) in points.iter().zip(avg_block_values.iter()) {
+            //println!("point: {:?}, value: {}", point, value);
+            let _ = out.write_all(
+                format!(
+                    "{},{},{},{},{},{},{}\n",
+                    point.x, point.y, point.z, 5, 5, 10, value
+                )
+                .as_bytes(),
+            );
+        }
+    }
+
+    #[test]
+    fn gsk_ok_point_test() {
+        // create a gridded database from a csv file (walker lake)
+        println!("Reading Cond Data");
+        let cond = PointSet::from_csv_index("C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/mineralized_domain_composites.csv", "X", "Y", "Z", "CU")
+            .expect("Failed to create gdb");
+
+        //
+
+        let vgram_rot = UnitQuaternion::from_euler_angles(
+            WideF32x8::splat(0.0),
+            WideF32x8::splat(0.0),
+            WideF32x8::splat(0f32.to_radians()),
+        );
+        let range = Vector3::new(
+            WideF32x8::splat(200.0),
+            WideF32x8::splat(200.0),
+            WideF32x8::splat(200.0),
+        );
+        let sill = WideF32x8::splat(1.0f32);
+
+        let spherical_vgram = CompositeVariogram::new(vec![VariogramType::Spherical(
+            SphericalVariogram::new(range, sill, vgram_rot),
+        )]);
+
+        // create search ellipsoid
+        let search_ellipsoid = Ellipsoid::new(
+            10000f32,
+            10000f32,
+            10000f32,
+            CoordinateSystem::new(
+                Translation3::new(0.0, 0.0, 0.0),
+                UnitQuaternion::from_euler_angles(0.0, 0.0, 0f32.to_radians()),
+            ),
+        );
+
+        // create a gsk system
+        let parameters = GSKSystemParameters {
+            max_group_size: 125,
+        };
+
+        let gsk = GSK::new(parameters);
+        // let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
+
+        println!("Reading Target Data");
+        let targ = PointSet::<f32>::from_csv_index(
+            "C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/target.csv",
+            "X",
+            "Y",
+            "Z",
+            "V",
+        )
+        .unwrap();
+
+        let points = targ.points.clone();
+
+        //map points in vec of group of points (64)
+        //map points in vec of group of points (64)
+        let mut block_inds = Vec::new();
+        let all_points = points
+            .iter()
+            .enumerate()
+            .map(|(i, point)| {
+                let aabb = Aabb::new(
+                    Point3::new(point.x, point.y, point.z),
+                    Point3::new(point.x + 5.0, point.y + 5.0, point.z + 10.0),
+                );
+
+                let disc_points = aabb.discretize(5f32, 5f32, 10f32);
+                block_inds.append(vec![i; disc_points.len()].as_mut());
+                disc_points
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+
+        let (groups, _inds) = optimize_groups(all_points.as_slice(), 1f32, 1f32, 1f32, 5, 5, 5);
+
+        let orientations = vec![UnitQuaternion::identity(); groups.len()];
+        let node_provider = PointGroupProvider::from_groups(groups.clone(), orientations);
+        let mut params = ConditioningParams::default();
+        params.max_n_cond = 64;
+        params.max_octant = 10000;
+        let time1 = std::time::Instant::now();
+        let values = gsk.estimate::<SKPointSupportBuilder, MiniLUOKSystem, _, _, _>(
+            &cond,
+            &params,
+            spherical_vgram,
+            search_ellipsoid,
+            &node_provider,
+        );
+        let time2 = std::time::Instant::now();
+        println!("Time: {:?}", (time2 - time1).as_secs());
+        println!(
+            "Points per minute: {}",
+            values.len() as f32 / (time2 - time1).as_secs_f32() * 60.0
+        );
+
+        let mut out = File::create("./test_results/lu_ok_point.txt").unwrap();
+        let _ = out.write_all(b"x,y,z,v\n");
+        let _ = out.write_all(b"4\n");
+        let _ = out.write_all(b"x\n");
+        let _ = out.write_all(b"y\n");
+        let _ = out.write_all(b"z\n");
+        let _ = out.write_all(b"value\n");
+
+        for (point, value) in groups.iter().flatten().zip(values.iter()) {
+            //println!("point: {:?}, value: {}", point, value);
+            let _ = out
+                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+        }
+
+        let mut out = File::create("./test_results/lu_ok_cond_data.txt").unwrap();
+        let _ = out.write_all(b"x,y,z,v\n");
+
+        for (point, value) in cond.points.iter().zip(cond.data.iter()) {
+            //println!("point: {:?}, value: {}", point, value);
+            let _ = out
+                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+        }
+
+        let mut out = File::create("./test_results/lu_ok_point.csv").unwrap();
+        //write header
+        let _ = out.write_all("X,Y,Z,DX,DY,DZ,V\n".as_bytes());
+
+        //write each row
+
+        for (point, value) in groups.iter().flatten().zip(values.iter()) {
             //println!("point: {:?}, value: {}", point, value);
             let _ = out.write_all(
                 format!(
