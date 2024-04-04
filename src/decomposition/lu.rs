@@ -1,14 +1,15 @@
 use crate::{kriging::simple_kriging::SKBuilder, variography::model_variograms::VariogramModel};
 
 use dyn_stack::{GlobalPodBuffer, PodStack, ReborrowMut};
-use faer_cholesky::llt::compute::LltInfo;
-use faer_cholesky::llt::{compute, CholeskyError};
 
-use faer_core::solve::solve_upper_triangular_in_place;
-use faer_core::unzipped;
-use faer_core::{
-    mul::{self, triangular::BlockStructure},
-    zipped, Conj, Mat, MatMut, MatRef, Parallelism,
+use faer::{
+    linalg::{
+        matmul::{self, triangular::BlockStructure},
+        triangular_solve::solve_upper_triangular_in_place,
+    },
+    modules::cholesky::{self, llt::compute::LltInfo},
+    solvers::CholeskyError,
+    unzipped, zipped, Conj, Mat, MatMut, MatRef, Parallelism,
 };
 use nalgebra::{SimdRealField, SimdValue};
 use rand::{rngs::StdRng, Rng};
@@ -32,7 +33,7 @@ impl LUSystem {
         let n_total = n_sim + n_cond;
 
         //create a buffer large enough to compute cholesky in place
-        let cholesky_required_mem = faer_cholesky::llt::compute::cholesky_in_place_req::<f32>(
+        let cholesky_required_mem = cholesky::llt::compute::cholesky_in_place_req::<f32>(
             n_total,
             Parallelism::None,
             Default::default(),
@@ -76,7 +77,7 @@ impl LUSystem {
         let mut cholesky_compute_stack = PodStack::new(&mut self.buffer);
 
         //compute cholseky decomposition of L matrix
-        compute::cholesky_in_place(
+        cholesky::llt::compute::cholesky_in_place(
             self.l_mat.as_mut(),
             Default::default(),
             Parallelism::None,
@@ -155,7 +156,7 @@ impl LUSystem {
         let mut sim_mat = Mat::zeros(self.n_sim, 1);
 
         //L_gd @ L_dd^-1 @ w_d
-        mul::matvec::matvec_with_conj(
+        matmul::matvec::matvec_with_conj(
             sim_mat.as_mut(),
             self.intermediate_mat.as_ref(),
             Conj::No,
@@ -165,7 +166,7 @@ impl LUSystem {
             1.0,
         );
         //L_gg @ w_g
-        mul::matvec::matvec_with_conj(
+        matmul::matvec::matvec_with_conj(
             sim_mat.as_mut(),
             self.l_mat
                 .as_ref()
@@ -322,7 +323,7 @@ impl MiniLUSystem for MiniLUSKSystem {
     #[inline(always)]
     fn estimate(&self) -> Vec<f32> {
         let mut est_mat = Mat::zeros(self.n_sim, 1);
-        mul::matvec::matvec_with_conj(
+        matmul::matvec::matvec_with_conj(
             est_mat.as_mut(),
             self.sk_weights.as_ref(),
             Conj::No,
@@ -343,7 +344,7 @@ impl MiniLUSystem for MiniLUSKSystem {
     #[inline(always)]
     fn simulate(&self) -> Vec<f32> {
         let mut sim_mat = Mat::zeros(self.n_sim, 1);
-        mul::matvec::matvec_with_conj(
+        matmul::matvec::matvec_with_conj(
             sim_mat.as_mut(),
             self.sk_weights.as_ref(),
             Conj::No,
@@ -353,7 +354,7 @@ impl MiniLUSystem for MiniLUSKSystem {
             1.0,
         );
 
-        mul::triangular::matmul(
+        matmul::triangular::matmul(
             sim_mat.as_mut(),
             BlockStructure::Rectangular,
             self.l_gg.as_ref(),
@@ -434,7 +435,7 @@ impl MiniLUSystem for MiniLUOKSystem {
     #[inline(always)]
     fn estimate(&self) -> Vec<f32> {
         let mut est_mat = Mat::zeros(self.n_sim, 1);
-        mul::matvec::matvec_with_conj(
+        matmul::matvec::matvec_with_conj(
             est_mat.as_mut(),
             self.ok_weights.as_ref(),
             Conj::No,
@@ -480,7 +481,7 @@ impl From<&mut LUSystem> for MiniLUOKSystem {
         let mut stack = PodStack::new(&mut lu.buffer);
 
         // solve C_dd @ \lambda_e = ones
-        faer_cholesky::llt::solve::solve_in_place_with_conj(
+        cholesky::llt::solve::solve_in_place_with_conj(
             lu.l_mat.as_ref().submatrix(0, 0, lu.n_cond, lu.n_cond),
             Conj::No,
             lambda_e.as_mut(),
@@ -495,7 +496,7 @@ impl From<&mut LUSystem> for MiniLUOKSystem {
         //stores 1 - ones^T @ \lambda_sk / denom
         let mut frac = Mat::zeros(lu.n_sim, 1);
         // frac = lambda_sk @ e
-        mul::matvec::matvec_with_conj(
+        matmul::matvec::matvec_with_conj(
             frac.as_mut(),
             lu.intermediate_mat.as_ref(),
             Conj::No,
@@ -510,7 +511,7 @@ impl From<&mut LUSystem> for MiniLUOKSystem {
 
         // lambda_ok = lmabda_sk + frac @ lambda e
         let mut ok = lu.intermediate_mat.clone();
-        mul::matmul(
+        matmul::matmul(
             ok.as_mut().transpose_mut(),
             lambda_e.as_ref(),
             frac.as_ref().transpose(),

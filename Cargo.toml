@@ -15,10 +15,11 @@ default = ["simba", "simba/wide"]
 packed = ["simba", "simba/packed_simd"]
 
 [dependencies]
+#linalg
+faer = "0.18.2"
 approx = "0.5.1"
-faer = "0.17.1"
-faer-core = "0.17.1"
-faer-cholesky = "0.17.1"
+# faer-core = "0.17.1"
+# faer-cholesky = "0.17.1"
 nalgebra = { version = "0.32.3", features = ["std"] }
 ndarray = "0.15.6"
 num-traits = "0.2.15"
@@ -26,9 +27,7 @@ parry3d = { version = "0.13.5", features = ["simd-stable"] }
 rand = "0.8.5"
 rstar = { version = "0.11.0", features = ["serde"] }
 dyn-stack = "0.10.0"
-# simba = { git = "https://github.com/dimforge/simba.git", branch = "master", features = [
-#     "packed_simd",
-# ] }
+
 serde = { version = "1", features = ["derive"] }
 
 simba = { version = "0.8.1", optional = true }
@@ -39,11 +38,8 @@ rayon = "1.8.1"
 csv = "1.2.2"
 itertools = "0.11.0"
 rand_distr = "0.4.3"
-mathru = "0.15.2"
-parking_lot = "0.12.1"
-# cudarc = "0.9.15"
+
 bytemuck = { version = "1.14.0", features = ["derive"] }
-# bvh = { git = "https://github.com/svenstaro/bvh.git" }
 rmpfit = "0.3.0"
 argmin = { version = "0.8" }
 argmin-math = { version = "0.3", features = [

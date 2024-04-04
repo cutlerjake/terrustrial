@@ -7,8 +7,11 @@ use crate::{
 };
 
 use dyn_stack::{GlobalPodBuffer, PodStack, ReborrowMut};
-use faer_cholesky::llt::compute;
-use faer_core::{mul::inner_prod::inner_prod_with_conj, Conj, Mat, MatRef, Parallelism};
+use faer::{
+    modules::{cholesky, core::mul::inner_prod::inner_prod_with_conj},
+    MatRef, Parallelism,
+};
+use faer::{Conj, Mat};
 use indicatif::ParallelProgressIterator;
 use nalgebra::{Point3, SimdRealField, SimdValue, Vector3};
 use num_traits::Float;
@@ -332,7 +335,7 @@ impl Clone for SimpleKrigingSystem {
             values: self.values.clone(),
             c_0: self.c_0,
             cholesky_compute_mem: GlobalPodBuffer::new(
-                faer_cholesky::llt::compute::cholesky_in_place_req::<f32>(
+                cholesky::llt::compute::cholesky_in_place_req::<f32>(
                     n_elems,
                     Parallelism::None,
                     Default::default(),
@@ -340,7 +343,7 @@ impl Clone for SimpleKrigingSystem {
                 .unwrap(),
             ),
             cholesky_solve_mem: GlobalPodBuffer::new(
-                faer_cholesky::llt::solve::solve_req::<f32>(n_elems, 1, Parallelism::None).unwrap(),
+                cholesky::llt::solve::solve_req::<f32>(n_elems, 1, Parallelism::None).unwrap(),
             ),
             n_elems,
         }
@@ -359,7 +362,7 @@ impl SimpleKrigingSystem
     /// * Requires zero mean data
     pub fn new(n_elems: usize) -> Self {
         let cholesky_compute_mem = GlobalPodBuffer::new(
-            faer_cholesky::llt::compute::cholesky_in_place_req::<f32>(
+            cholesky::llt::compute::cholesky_in_place_req::<f32>(
                 n_elems,
                 Parallelism::None,
                 Default::default(),
@@ -368,7 +371,7 @@ impl SimpleKrigingSystem
         );
 
         let cholesky_solve_mem = GlobalPodBuffer::new(
-            faer_cholesky::llt::solve::solve_req::<f32>(n_elems, 1, Parallelism::None).unwrap(),
+            cholesky::llt::solve::solve_req::<f32>(n_elems, 1, Parallelism::None).unwrap(),
         );
 
         Self {
@@ -405,7 +408,7 @@ impl SimpleKrigingSystem
         let mut cholesky_solve_stack = PodStack::new(&mut self.cholesky_solve_mem);
 
         //compute cholseky decomposition of covariance matrix
-        let _ = compute::cholesky_in_place(
+        let _ = cholesky::llt::compute::cholesky_in_place(
             self.cond_cov_mat.as_mut(),
             Default::default(),
             Parallelism::None,
@@ -414,7 +417,7 @@ impl SimpleKrigingSystem
         );
 
         //solve SK system
-        faer_cholesky::llt::solve::solve_with_conj(
+        cholesky::llt::solve::solve_with_conj(
             self.weights.as_mut(),
             self.cond_cov_mat.as_ref(),
             Conj::No,
