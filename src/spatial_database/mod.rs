@@ -7,16 +7,8 @@ pub mod coordinate_system;
 pub mod gridded_databases;
 pub mod normalized;
 pub mod rtree_point_set;
+pub mod value_modifiers;
 pub mod zero_mean;
-
-pub trait PointProvider {
-    fn points(&self) -> &[Point3<f32>];
-}
-
-pub trait SpatialQueryable<T, G> {
-    fn query(&self, point: &Point3<f32>) -> (Vec<T>, Vec<Point3<f32>>);
-    fn geometry(&self) -> &G;
-}
 
 pub trait ConditioningProvider<G, T, P> {
     type Shape;
@@ -27,34 +19,29 @@ pub trait ConditioningProvider<G, T, P> {
         params: &P,
     ) -> (Vec<usize>, Vec<T>, Vec<Self::Shape>, bool);
 
-    fn points(&self) -> &[Point3<f32>];
-    fn data(&self) -> &[T];
-    fn data_mut(&mut self) -> &mut [T];
+    // fn points(&self) -> &[Point3<f32>];
+    // fn data(&self) -> &[T];
 }
 pub struct MapConditioningProvider<'a, G, T, P, C, MAP>
 where
     C: ConditioningProvider<G, T, P>,
-    MAP: Fn(&mut T),
+    MAP: Fn(&mut [T]),
 {
-    pub conditioning_provider: &'a mut C,
+    pub conditioning_provider: &'a C,
     pub map: MAP,
-    phantom_g: std::marker::PhantomData<G>,
-    phantom_t: std::marker::PhantomData<T>,
-    phantom_p: std::marker::PhantomData<P>,
+    phantom: std::marker::PhantomData<(G, T, P)>,
 }
 
 impl<'a, G, T, P, C, MAP> MapConditioningProvider<'a, G, T, P, C, MAP>
 where
     C: ConditioningProvider<G, T, P>,
-    MAP: Fn(&mut T),
+    MAP: Fn(&mut [T]),
 {
-    pub fn new(conditioning_provider: &'a mut C, map: MAP) -> Self {
+    pub fn new(conditioning_provider: &'a C, map: MAP) -> Self {
         Self {
             conditioning_provider,
             map,
-            phantom_g: std::marker::PhantomData,
-            phantom_t: std::marker::PhantomData,
-            phantom_p: std::marker::PhantomData,
+            phantom: std::marker::PhantomData,
         }
     }
 }
@@ -63,7 +50,7 @@ impl<'a, G, T, P, C, MAP> ConditioningProvider<G, T, P>
     for MapConditioningProvider<'a, G, T, P, C, MAP>
 where
     C: ConditioningProvider<G, T, P>,
-    MAP: Fn(&mut T),
+    MAP: Fn(&mut [T]),
 {
     type Shape = C::Shape;
 
@@ -76,22 +63,17 @@ where
         let (inds, mut data, shapes, res) =
             self.conditioning_provider.query(point, ellipsoid, params);
 
-        data.iter_mut().for_each(|x| (self.map)(x));
-
+        (self.map)(&mut data);
         (inds, data, shapes, res)
     }
 
-    fn points(&self) -> &[Point3<f32>] {
-        self.conditioning_provider.points()
-    }
+    // fn points(&self) -> &[Point3<f32>] {
+    //     self.conditioning_provider.points()
+    // }
 
-    fn data(&self) -> &[T] {
-        self.conditioning_provider.data()
-    }
-
-    fn data_mut(&mut self) -> &mut [T] {
-        self.conditioning_provider.data_mut()
-    }
+    // fn data(&self) -> &[T] {
+    //     self.conditioning_provider.data()
+    // }
 }
 
 pub struct FilerterMapConditioningProvider<'a, G, T, P, C, FILT, MAP>
@@ -160,17 +142,13 @@ where
         (inds, data, shapes, res)
     }
 
-    fn points(&self) -> &[Point3<f32>] {
-        self.conditioning_provider.points()
-    }
+    // fn points(&self) -> &[Point3<f32>] {
+    //     self.conditioning_provider.points()
+    // }
 
-    fn data(&self) -> &[T] {
-        self.conditioning_provider.data()
-    }
-
-    fn data_mut(&mut self) -> &mut [T] {
-        self.conditioning_provider.data_mut()
-    }
+    // fn data(&self) -> &[T] {
+    //     self.conditioning_provider.data()
+    // }
 }
 
 pub trait SpatialDataBase<T> {

@@ -1,5 +1,6 @@
 use crate::decomposition::lu::LUSystem;
-use crate::decomposition::lu::MiniLUSystem;
+use crate::decomposition::solved_systems::SolvedLUSystem;
+use crate::decomposition::solved_systems::SolvedSystemBuilder;
 use crate::geometry::ellipsoid::Ellipsoid;
 use crate::geometry::Geometry;
 use crate::node_providers::NodeProvider;
@@ -42,6 +43,7 @@ impl GSK {
         variogram_model: V,
         search_ellipsoid: Ellipsoid,
         groups: &(impl NodeProvider<Support = SKB::Support> + Sync),
+        solved_system: impl SolvedSystemBuilder,
     ) -> Vec<f32>
     where
         SKB: SKBuilder,
@@ -51,7 +53,7 @@ impl GSK {
         S::Shape: SupportTransform<SKB::Support>,
         <SKB as SKBuilder>::Support: SupportInterface, // why do I need this the trait already requires this?!?!?
         // SKB::Support: Sync,
-        MS: MiniLUSystem,
+        MS: SolvedLUSystem,
     {
         let system = LUSystem::new(
             self.system_params.max_group_size,
@@ -64,10 +66,11 @@ impl GSK {
             .map_with(
                 (
                     system.clone(),
+                    solved_system.clone(),
                     search_ellipsoid.clone(),
                     variogram_model.clone(),
                 ),
-                |(local_system, ellipsoid, vgram), (group, orientation)| {
+                |(local_system, local_solved_system, ellipsoid, vgram), (group, orientation)| {
                     //get center of group
                     let center = group.iter().fold(Point3::<f32>::origin(), |mut acc, x| {
                         acc.coords += x.center().coords;
@@ -99,11 +102,13 @@ impl GSK {
                             .collect::<Vec<_>>();
 
                         //build kriging system for point
-                        let mut mini_system = local_system.create_mini_system::<V, VT, SKB, MS>(
-                            cond_points.as_slice(),
-                            group,
-                            vgram,
-                        );
+                        local_system.build_cov_matrix::<_, _, SKB>(&cond_points, &group, vgram);
+                        let mut mini_system = local_solved_system.build(local_system);
+                        // let mut mini_system = local_system.create_mini_system::<V, VT, SKB, MS>(
+                        //     cond_points.as_slice(),
+                        //     group,
+                        //     vgram,
+                        // );
 
                         mini_system.populate_cond_values_est(cond_values.as_slice());
 
@@ -195,615 +200,615 @@ pub fn optimize_groups(
     (groups, inds)
 }
 
-#[cfg(test)]
-mod test {
-    use std::{fs::File, io::Write};
-
-    use nalgebra::{Translation3, UnitQuaternion, Vector3};
-    use parry3d::bounding_volume::Aabb;
-    use simba::simd::WideF32x8;
-
-    use crate::{
-        decomposition::lu::{
-            AverageTransfrom, MiniLUOKSystem, MiniLUSKSystem, ModifiedMiniLUSystem,
-            NegativeFilteredMiniLUSystem,
-        },
-        kriging::simple_kriging::{SKPointSupportBuilder, SKVolumeSupportBuilder},
-        node_providers::{point_group::PointGroupProvider, volume_group::VolumeGroupProvider},
-        spatial_database::{
-            coordinate_system::CoordinateSystem, rtree_point_set::point_set::PointSet,
-            zero_mean::ZeroMeanTransform, DiscretiveVolume,
-        },
-        variography::model_variograms::{
-            composite::{CompositeVariogram, VariogramType},
-            spherical::SphericalVariogram,
-        },
-    };
-
-    use super::*;
-
-    #[test]
-    fn gsk_ok_test() {
-        // create a gridded database from a csv file (walker lake)
-        println!("Reading Cond Data");
-        let cond = PointSet::from_csv_index("C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/mineralized_domain_composites.csv", "X", "Y", "Z", "CU")
-            .expect("Failed to create gdb");
-
-        //
-
-        let vgram_rot = UnitQuaternion::from_euler_angles(
-            WideF32x8::splat(0.0),
-            WideF32x8::splat(0.0),
-            WideF32x8::splat(0f32.to_radians()),
-        );
-        let range = Vector3::new(
-            WideF32x8::splat(50.0),
-            WideF32x8::splat(200.0),
-            WideF32x8::splat(50.0),
-        );
-        let sill = WideF32x8::splat(1.0f32);
-
-        let spherical_vgram = CompositeVariogram::new(vec![VariogramType::Spherical(
-            SphericalVariogram::new(range, sill, vgram_rot),
-        )]);
-
-        // create search ellipsoid
-        let search_ellipsoid = Ellipsoid::new(
-            50f32,
-            200f32,
-            50f32,
-            CoordinateSystem::new(
-                Translation3::new(0.0, 0.0, 0.0),
-                UnitQuaternion::from_euler_angles(0.0, 0.0, 0f32.to_radians()),
-            ),
-        );
-
-        // create a gsk system
-        let parameters = GSKSystemParameters { max_group_size: 8 };
-
-        let gsk = GSK::new(parameters);
-        // let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
-
-        println!("Reading Target Data");
-        let targ = PointSet::<f32>::from_csv_index(
-            "C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/target.csv",
-            "X",
-            "Y",
-            "Z",
-            "V",
-        )
-        .unwrap();
-
-        let points = targ.points.clone();
-
-        //map points in vec of group of points (64)
-        //map points in vec of group of points (64)
-        let mut block_inds = Vec::new();
-        let all_points = points
-            .iter()
-            .enumerate()
-            .map(|(i, point)| {
-                let aabb = Aabb::new(
-                    Point3::new(point.x, point.y, point.z),
-                    Point3::new(point.x + 5.0, point.y + 5.0, point.z + 10.0),
-                );
-
-                let disc_points = aabb.discretize(5f32, 5f32, 10f32);
-                block_inds.append(vec![i; disc_points.len()].as_mut());
-                disc_points
-            })
-            .flatten()
-            .collect::<Vec<_>>();
-
-        let (groups, inds) = optimize_groups(all_points.as_slice(), 5f32, 5f32, 10f32, 2, 2, 2);
-
-        let orientations = groups
-            .iter()
-            .map(|group| {
-                UnitQuaternion::from_euler_angles(0.0, 0.0, (group.center().x * 0.1).to_radians())
-            })
-            .collect::<Vec<_>>();
-
-        //write orientations to fileq
-        let mut csv_str = "x,y,z,ang1,ang2,ang3".to_string();
-        for (point, orientation) in groups.iter().zip(orientations.iter()) {
-            csv_str.push_str(&format!(
-                "{},{},{},{},{},{}\n",
-                point.center().x,
-                point.center().y,
-                point.center().z,
-                orientation.euler_angles().0,
-                orientation.euler_angles().1,
-                orientation.euler_angles().2
-            ));
-        }
-
-        let _ = std::fs::write("./test_results/lu_ok_orientations.csv", csv_str);
-
-        let node_provider = PointGroupProvider::from_groups(groups.clone(), orientations);
-        let mut params = ConditioningParams::default();
-        params.orient_search = true;
-        params.orient_variogram = true;
-        params.max_n_cond = 12;
-        params.valid_value_range = [0.0, f32::INFINITY];
-
-        println!("params: {:#?}", params);
-        let time1 = std::time::Instant::now();
-        let values = gsk
-            .estimate::<SKPointSupportBuilder, NegativeFilteredMiniLUSystem<MiniLUOKSystem>, _, _, _>(
-                &cond,
-                &params,
-                spherical_vgram,
-                search_ellipsoid,
-                &node_provider,
-            );
-        let time2 = std::time::Instant::now();
-        println!("Time: {:?}", (time2 - time1).as_secs());
-        println!(
-            "Points per minute: {}",
-            values.len() as f32 / (time2 - time1).as_secs_f32() * 60.0
-        );
-
-        let block_values = values.iter().zip(inds.iter().flatten()).fold(
-            vec![vec![]; points.len()],
-            |mut acc, (value, ind)| {
-                acc[block_inds[*ind]].push(*value);
-                acc
-            },
-        );
-
-        let avg_block_values = block_values
-            .iter()
-            .map(|x| x.iter().sum::<f32>() / x.len() as f32)
-            .collect::<Vec<_>>();
-        //save values to file for visualization
-
-        let mut out = File::create("./test_results/lu_ok.txt").unwrap();
-        let _ = out.write_all(b"surfs\n");
-        let _ = out.write_all(b"4\n");
-        let _ = out.write_all(b"x\n");
-        let _ = out.write_all(b"y\n");
-        let _ = out.write_all(b"z\n");
-        let _ = out.write_all(b"value\n");
-
-        for (point, value) in points.iter().zip(avg_block_values.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out
-                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
-        }
-
-        let mut out = File::create("./test_results/lu_ok_cond_data.csv").unwrap();
-
-        let _ = out.write(b"x,y,z,v\n");
-
-        for (point, value) in cond.points.iter().zip(cond.data.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out
-                .write_all(format!("{},{},{},{}\n", point.x, point.y, point.z, value).as_bytes());
-        }
-
-        let mut out = File::create("./test_results/lu_ok.csv").unwrap();
-        //write header
-        let _ = out.write_all("X,Y,Z,DX,DY,DZ,V\n".as_bytes());
-
-        //write each row
-
-        for (point, value) in points.iter().zip(avg_block_values.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out.write_all(
-                format!(
-                    "{},{},{},{},{},{},{}\n",
-                    point.x, point.y, point.z, 5, 5, 10, value
-                )
-                .as_bytes(),
-            );
-        }
-    }
-
-    #[test]
-    fn gsk_ok_point_test() {
-        // create a gridded database from a csv file (walker lake)
-        println!("Reading Cond Data");
-        let cond = PointSet::from_csv_index("C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/mineralized_domain_composites.csv", "X", "Y", "Z", "CU")
-            .expect("Failed to create gdb");
-
-        //
-
-        let vgram_rot = UnitQuaternion::from_euler_angles(
-            WideF32x8::splat(0.0),
-            WideF32x8::splat(0.0),
-            WideF32x8::splat(0f32.to_radians()),
-        );
-        let range = Vector3::new(
-            WideF32x8::splat(200.0),
-            WideF32x8::splat(200.0),
-            WideF32x8::splat(200.0),
-        );
-        let sill = WideF32x8::splat(1.0f32);
-
-        let spherical_vgram = CompositeVariogram::new(vec![VariogramType::Spherical(
-            SphericalVariogram::new(range, sill, vgram_rot),
-        )]);
-
-        // create search ellipsoid
-        let search_ellipsoid = Ellipsoid::new(
-            10000f32,
-            10000f32,
-            10000f32,
-            CoordinateSystem::new(
-                Translation3::new(0.0, 0.0, 0.0),
-                UnitQuaternion::from_euler_angles(0.0, 0.0, 0f32.to_radians()),
-            ),
-        );
-
-        // create a gsk system
-        let parameters = GSKSystemParameters {
-            max_group_size: 125,
-        };
-
-        let gsk = GSK::new(parameters);
-        // let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
-
-        println!("Reading Target Data");
-        let targ = PointSet::<f32>::from_csv_index(
-            "C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/target.csv",
-            "X",
-            "Y",
-            "Z",
-            "V",
-        )
-        .unwrap();
-
-        let points = targ.points.clone();
-
-        //map points in vec of group of points (64)
-        //map points in vec of group of points (64)
-        let mut block_inds = Vec::new();
-        let all_points = points
-            .iter()
-            .enumerate()
-            .map(|(i, point)| {
-                let aabb = Aabb::new(
-                    Point3::new(point.x, point.y, point.z),
-                    Point3::new(point.x + 5.0, point.y + 5.0, point.z + 10.0),
-                );
-
-                let disc_points = aabb.discretize(5f32, 5f32, 10f32);
-                block_inds.append(vec![i; disc_points.len()].as_mut());
-                disc_points
-            })
-            .flatten()
-            .collect::<Vec<_>>();
-
-        let (groups, _inds) = optimize_groups(all_points.as_slice(), 1f32, 1f32, 1f32, 5, 5, 5);
-
-        let orientations = vec![UnitQuaternion::identity(); groups.len()];
-        let node_provider = PointGroupProvider::from_groups(groups.clone(), orientations);
-        let mut params = ConditioningParams::default();
-        params.max_n_cond = 64;
-        params.max_octant = 10000;
-        let time1 = std::time::Instant::now();
-        let values = gsk.estimate::<SKPointSupportBuilder, MiniLUOKSystem, _, _, _>(
-            &cond,
-            &params,
-            spherical_vgram,
-            search_ellipsoid,
-            &node_provider,
-        );
-        let time2 = std::time::Instant::now();
-        println!("Time: {:?}", (time2 - time1).as_secs());
-        println!(
-            "Points per minute: {}",
-            values.len() as f32 / (time2 - time1).as_secs_f32() * 60.0
-        );
-
-        let mut out = File::create("./test_results/lu_ok_point.txt").unwrap();
-        let _ = out.write_all(b"x,y,z,v\n");
-        let _ = out.write_all(b"4\n");
-        let _ = out.write_all(b"x\n");
-        let _ = out.write_all(b"y\n");
-        let _ = out.write_all(b"z\n");
-        let _ = out.write_all(b"value\n");
-
-        for (point, value) in groups.iter().flatten().zip(values.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out
-                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
-        }
-
-        let mut out = File::create("./test_results/lu_ok_cond_data.txt").unwrap();
-        let _ = out.write_all(b"x,y,z,v\n");
-
-        for (point, value) in cond.points.iter().zip(cond.data.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out
-                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
-        }
-
-        let mut out = File::create("./test_results/lu_ok_point.csv").unwrap();
-        //write header
-        let _ = out.write_all("X,Y,Z,DX,DY,DZ,V\n".as_bytes());
-
-        //write each row
-
-        for (point, value) in groups.iter().flatten().zip(values.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out.write_all(
-                format!(
-                    "{},{},{},{},{},{},{}\n",
-                    point.x, point.y, point.z, 5, 5, 10, value
-                )
-                .as_bytes(),
-            );
-        }
-    }
-
-    #[test]
-    fn gsk_sk_test() {
-        // create a gridded database from a csv file (walker lake)
-        println!("Reading Cond Data");
-        let mut cond = PointSet::from_csv_index("C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/mineralized_domain_composites.csv", "X", "Y", "Z", "CU")
-            .expect("Failed to create gdb");
-
-        let mt = ZeroMeanTransform::from(cond.data());
-        cond.data.iter_mut().for_each(|x| *x = mt.transform(*x));
-
-        let vgram_rot = UnitQuaternion::identity();
-        let range = Vector3::new(
-            WideF32x8::splat(200.0),
-            WideF32x8::splat(200.0),
-            WideF32x8::splat(200.0),
-        );
-        let sill = WideF32x8::splat(1.0f32);
-
-        let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
-
-        // create search ellipsoid
-        let search_ellipsoid = Ellipsoid::new(
-            200f32,
-            200f32,
-            200f32,
-            CoordinateSystem::new(Translation3::new(0.0, 0.0, 0.0), UnitQuaternion::identity()),
-        );
-
-        // create a gsk system
-        let parameters = GSKSystemParameters {
-            max_group_size: 250,
-        };
-        let gsk = GSK::new(parameters);
-        // let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
-
-        println!("Reading Target Data");
-        let targ = PointSet::<f32>::from_csv_index(
-            "C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/target.csv",
-            "X",
-            "Y",
-            "Z",
-            "V",
-        )
-        .unwrap();
-
-        let points = targ.points.clone();
-
-        //map points in vec of group of points (64)
-        let mut groups = Vec::new();
-        let mut group = Vec::new();
-        for (_, point) in points.iter().enumerate() {
-            for x in 0..5 {
-                for y in 0..5 {
-                    for z in 0..10 {
-                        group.push(Point3::new(
-                            point.x + x as f32,
-                            point.y + y as f32,
-                            point.z + z as f32,
-                        ));
-                    }
-                }
-            }
-
-            groups.push(group.clone());
-            group.clear();
-        }
-
-        let node_provider = PointGroupProvider::from_groups(
-            groups.clone(),
-            vec![UnitQuaternion::identity(); groups.len()],
-        );
-        let time1 = std::time::Instant::now();
-        let values =
-            gsk.estimate::<SKPointSupportBuilder, ModifiedMiniLUSystem<MiniLUSKSystem, AverageTransfrom>, _, _, _>(&cond, &Default::default(), spherical_vgram, search_ellipsoid, &node_provider);
-        let time2 = std::time::Instant::now();
-        println!("Time: {:?}", (time2 - time1).as_secs());
-        println!(
-            "Points per minute: {}",
-            values.len() as f32 / (time2 - time1).as_secs_f32() * 60.0
-        );
-
-        //save values to file for visualization
-
-        let mut out = File::create("./test_results/lu_sk_block_mean.txt").unwrap();
-        let _ = out.write_all(b"surfs\n");
-        let _ = out.write_all(b"4\n");
-        let _ = out.write_all(b"x\n");
-        let _ = out.write_all(b"y\n");
-        let _ = out.write_all(b"z\n");
-        let _ = out.write_all(b"value\n");
-
-        for (point, value) in points.iter().zip(values.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out
-                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
-        }
-
-        let mut out = File::create("./test_results/lu_ok_block_mean_cond_data.txt").unwrap();
-        let _ = out.write_all(b"surfs\n");
-        let _ = out.write_all(b"4\n");
-        let _ = out.write_all(b"x\n");
-        let _ = out.write_all(b"y\n");
-        let _ = out.write_all(b"z\n");
-        let _ = out.write_all(b"value\n");
-
-        for (point, value) in cond.points.iter().zip(cond.data.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out
-                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
-        }
-
-        let mut out = File::create("./test_results/lu_sk_block_mean..csv").unwrap();
-        //write header
-        let _ = out.write_all("X,Y,Z,XS,YS,ZS,V\n".as_bytes());
-
-        //write each row
-
-        for (point, value) in points.iter().zip(values.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out.write_all(
-                format!(
-                    "{},{},{},{},{},{},{}\n",
-                    point.x, point.y, point.z, 5, 5, 10, value
-                )
-                .as_bytes(),
-            );
-        }
-    }
-
-    #[test]
-    fn gsk_ok_db_test() {
-        // create a gridded database from a csv file (walker lake)
-        println!("Reading Cond Data");
-        let cond = PointSet::from_csv_index("C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/mineralized_domain_composites.csv", "X", "Y", "Z", "CU")
-            .expect("Failed to create gdb");
-
-        //
-
-        let vgram_rot = UnitQuaternion::identity();
-        let range = Vector3::new(
-            WideF32x8::splat(200.0),
-            WideF32x8::splat(200.0),
-            WideF32x8::splat(200.0),
-        );
-        let sill = WideF32x8::splat(1.0f32);
-
-        let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
-
-        // create search ellipsoid
-        let search_ellipsoid = Ellipsoid::new(
-            200f32,
-            200f32,
-            200f32,
-            CoordinateSystem::new(Translation3::new(0.0, 0.0, 0.0), UnitQuaternion::identity()),
-        );
-
-        // create a gsk system
-        let group_size = 10;
-        let parameters = GSKSystemParameters {
-            max_group_size: group_size,
-        };
-
-        let gsk = GSK::new(parameters);
-        // let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
-
-        println!("Reading Target Data");
-        let targ = PointSet::<f32>::from_csv_index(
-            "C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/target.csv",
-            "X",
-            "Y",
-            "Z",
-            "V",
-        )
-        .unwrap();
-
-        let points = targ.points.clone();
-
-        //map points in vec of group of points (64)
-        let mut groups = Vec::new();
-        let mut group = Vec::new();
-        for (i, point) in points.iter().enumerate() {
-            //iterate over 5x5x10 grid originating at point
-            let mut block = Vec::new();
-            for x in 0..5 {
-                for y in 0..5 {
-                    for z in 0..10 {
-                        block.push(Point3::new(
-                            point.x + x as f32,
-                            point.y + y as f32,
-                            point.z + z as f32,
-                        ));
-                    }
-                }
-            }
-            group.push(block);
-
-            if (i % group_size - 1 == 0 && i != 0) || i == points.len() - 1 {
-                groups.push(group.clone());
-                group.clear();
-            }
-        }
-
-        let node_provider = VolumeGroupProvider::from_groups(
-            groups.clone(),
-            vec![UnitQuaternion::identity(); groups.len()],
-        );
-        let time1 = std::time::Instant::now();
-        let values = gsk.estimate::<SKVolumeSupportBuilder, MiniLUOKSystem, _, _, _>(
-            &cond,
-            &Default::default(),
-            spherical_vgram,
-            search_ellipsoid,
-            &node_provider,
-        );
-        let time2 = std::time::Instant::now();
-        println!("Time: {:?}", (time2 - time1).as_secs());
-        println!(
-            "Points per minute: {}",
-            values.len() as f32 / (time2 - time1).as_secs_f32() * 60.0
-        );
-
-        //save values to file for visualization
-
-        let mut out = File::create("./test_results/lu_ok_db.txt").unwrap();
-        let _ = out.write_all(b"surfs\n");
-        let _ = out.write_all(b"4\n");
-        let _ = out.write_all(b"x\n");
-        let _ = out.write_all(b"y\n");
-        let _ = out.write_all(b"z\n");
-        let _ = out.write_all(b"value\n");
-
-        for (point, value) in points.iter().zip(values.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out
-                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
-        }
-
-        let mut out = File::create("./test_results/lu_ok_db_cond_data.txt").unwrap();
-        let _ = out.write_all(b"surfs\n");
-        let _ = out.write_all(b"4\n");
-        let _ = out.write_all(b"x\n");
-        let _ = out.write_all(b"y\n");
-        let _ = out.write_all(b"z\n");
-        let _ = out.write_all(b"value\n");
-
-        for (point, value) in cond.points.iter().zip(cond.data.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out
-                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
-        }
-
-        let mut out = File::create("./test_results/lu_ok_db.csv").unwrap();
-        //write header
-        let _ = out.write_all("X,Y,Z,XS,YS,ZS,V\n".as_bytes());
-
-        //write each row
-
-        for (point, value) in points.iter().zip(values.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out.write_all(
-                format!(
-                    "{},{},{},{},{},{},{}\n",
-                    point.x, point.y, point.z, 5, 5, 10, value
-                )
-                .as_bytes(),
-            );
-        }
-    }
-}
+// #[cfg(test)]
+// mod test {
+//     use std::{fs::File, io::Write};
+
+//     use nalgebra::{Translation3, UnitQuaternion, Vector3};
+//     use parry3d::bounding_volume::Aabb;
+//     use simba::simd::WideF32x8;
+
+//     use crate::{
+//         decomposition::lu::{
+//             MeanTransfrom, ModifiedMiniLUSystem, NegativeFilteredMiniLUSystem, SolvedLUOKSystem,
+//             SolvedLUSKSystem,
+//         },
+//         kriging::simple_kriging::{SKPointSupportBuilder, SKVolumeSupportBuilder},
+//         node_providers::{point_group::PointGroupProvider, volume_group::VolumeGroupProvider},
+//         spatial_database::{
+//             coordinate_system::CoordinateSystem, rtree_point_set::point_set::PointSet,
+//             zero_mean::ZeroMeanTransform, DiscretiveVolume,
+//         },
+//         variography::model_variograms::{
+//             composite::{CompositeVariogram, VariogramType},
+//             spherical::SphericalVariogram,
+//         },
+//     };
+
+//     use super::*;
+
+//     #[test]
+//     fn gsk_ok_test() {
+//         // create a gridded database from a csv file (walker lake)
+//         println!("Reading Cond Data");
+//         let cond = PointSet::from_csv_index("C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/mineralized_domain_composites.csv", "X", "Y", "Z", "CU")
+//             .expect("Failed to create gdb");
+
+//         //
+
+//         let vgram_rot = UnitQuaternion::from_euler_angles(
+//             WideF32x8::splat(0.0),
+//             WideF32x8::splat(0.0),
+//             WideF32x8::splat(0f32.to_radians()),
+//         );
+//         let range = Vector3::new(
+//             WideF32x8::splat(50.0),
+//             WideF32x8::splat(200.0),
+//             WideF32x8::splat(50.0),
+//         );
+//         let sill = WideF32x8::splat(1.0f32);
+
+//         let spherical_vgram = CompositeVariogram::new(vec![VariogramType::Spherical(
+//             SphericalVariogram::new(range, sill, vgram_rot),
+//         )]);
+
+//         // create search ellipsoid
+//         let search_ellipsoid = Ellipsoid::new(
+//             50f32,
+//             200f32,
+//             50f32,
+//             CoordinateSystem::new(
+//                 Translation3::new(0.0, 0.0, 0.0),
+//                 UnitQuaternion::from_euler_angles(0.0, 0.0, 0f32.to_radians()),
+//             ),
+//         );
+
+//         // create a gsk system
+//         let parameters = GSKSystemParameters { max_group_size: 8 };
+
+//         let gsk = GSK::new(parameters);
+//         // let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
+
+//         println!("Reading Target Data");
+//         let targ = PointSet::<f32>::from_csv_index(
+//             "C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/target.csv",
+//             "X",
+//             "Y",
+//             "Z",
+//             "V",
+//         )
+//         .unwrap();
+
+//         let points = targ.points.clone();
+
+//         //map points in vec of group of points (64)
+//         //map points in vec of group of points (64)
+//         let mut block_inds = Vec::new();
+//         let all_points = points
+//             .iter()
+//             .enumerate()
+//             .map(|(i, point)| {
+//                 let aabb = Aabb::new(
+//                     Point3::new(point.x, point.y, point.z),
+//                     Point3::new(point.x + 5.0, point.y + 5.0, point.z + 10.0),
+//                 );
+
+//                 let disc_points = aabb.discretize(5f32, 5f32, 10f32);
+//                 block_inds.append(vec![i; disc_points.len()].as_mut());
+//                 disc_points
+//             })
+//             .flatten()
+//             .collect::<Vec<_>>();
+
+//         let (groups, inds) = optimize_groups(all_points.as_slice(), 5f32, 5f32, 10f32, 2, 2, 2);
+
+//         let orientations = groups
+//             .iter()
+//             .map(|group| {
+//                 UnitQuaternion::from_euler_angles(0.0, 0.0, (group.center().x * 0.1).to_radians())
+//             })
+//             .collect::<Vec<_>>();
+
+//         //write orientations to fileq
+//         let mut csv_str = "x,y,z,ang1,ang2,ang3".to_string();
+//         for (point, orientation) in groups.iter().zip(orientations.iter()) {
+//             csv_str.push_str(&format!(
+//                 "{},{},{},{},{},{}\n",
+//                 point.center().x,
+//                 point.center().y,
+//                 point.center().z,
+//                 orientation.euler_angles().0,
+//                 orientation.euler_angles().1,
+//                 orientation.euler_angles().2
+//             ));
+//         }
+
+//         let _ = std::fs::write("./test_results/lu_ok_orientations.csv", csv_str);
+
+//         let node_provider = PointGroupProvider::from_groups(groups.clone(), orientations);
+//         let mut params = ConditioningParams::default();
+//         params.orient_search = true;
+//         params.orient_variogram = true;
+//         params.max_n_cond = 12;
+//         params.valid_value_range = [0.0, f32::INFINITY];
+
+//         println!("params: {:#?}", params);
+//         let time1 = std::time::Instant::now();
+//         let values = gsk
+//             .estimate::<SKPointSupportBuilder, NegativeFilteredMiniLUSystem<SolvedLUOKSystem>, _, _, _>(
+//                 &cond,
+//                 &params,
+//                 spherical_vgram,
+//                 search_ellipsoid,
+//                 &node_provider,
+//             );
+//         let time2 = std::time::Instant::now();
+//         println!("Time: {:?}", (time2 - time1).as_secs());
+//         println!(
+//             "Points per minute: {}",
+//             values.len() as f32 / (time2 - time1).as_secs_f32() * 60.0
+//         );
+
+//         let block_values = values.iter().zip(inds.iter().flatten()).fold(
+//             vec![vec![]; points.len()],
+//             |mut acc, (value, ind)| {
+//                 acc[block_inds[*ind]].push(*value);
+//                 acc
+//             },
+//         );
+
+//         let avg_block_values = block_values
+//             .iter()
+//             .map(|x| x.iter().sum::<f32>() / x.len() as f32)
+//             .collect::<Vec<_>>();
+//         //save values to file for visualization
+
+//         let mut out = File::create("./test_results/lu_ok.txt").unwrap();
+//         let _ = out.write_all(b"surfs\n");
+//         let _ = out.write_all(b"4\n");
+//         let _ = out.write_all(b"x\n");
+//         let _ = out.write_all(b"y\n");
+//         let _ = out.write_all(b"z\n");
+//         let _ = out.write_all(b"value\n");
+
+//         for (point, value) in points.iter().zip(avg_block_values.iter()) {
+//             //println!("point: {:?}, value: {}", point, value);
+//             let _ = out
+//                 .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+//         }
+
+//         let mut out = File::create("./test_results/lu_ok_cond_data.csv").unwrap();
+
+//         let _ = out.write(b"x,y,z,v\n");
+
+//         for (point, value) in cond.points.iter().zip(cond.data.iter()) {
+//             //println!("point: {:?}, value: {}", point, value);
+//             let _ = out
+//                 .write_all(format!("{},{},{},{}\n", point.x, point.y, point.z, value).as_bytes());
+//         }
+
+//         let mut out = File::create("./test_results/lu_ok.csv").unwrap();
+//         //write header
+//         let _ = out.write_all("X,Y,Z,DX,DY,DZ,V\n".as_bytes());
+
+//         //write each row
+
+//         for (point, value) in points.iter().zip(avg_block_values.iter()) {
+//             //println!("point: {:?}, value: {}", point, value);
+//             let _ = out.write_all(
+//                 format!(
+//                     "{},{},{},{},{},{},{}\n",
+//                     point.x, point.y, point.z, 5, 5, 10, value
+//                 )
+//                 .as_bytes(),
+//             );
+//         }
+//     }
+
+//     #[test]
+//     fn gsk_ok_point_test() {
+//         // create a gridded database from a csv file (walker lake)
+//         println!("Reading Cond Data");
+//         let cond = PointSet::from_csv_index("C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/mineralized_domain_composites.csv", "X", "Y", "Z", "CU")
+//             .expect("Failed to create gdb");
+
+//         //
+
+//         let vgram_rot = UnitQuaternion::from_euler_angles(
+//             WideF32x8::splat(0.0),
+//             WideF32x8::splat(0.0),
+//             WideF32x8::splat(0f32.to_radians()),
+//         );
+//         let range = Vector3::new(
+//             WideF32x8::splat(200.0),
+//             WideF32x8::splat(200.0),
+//             WideF32x8::splat(200.0),
+//         );
+//         let sill = WideF32x8::splat(1.0f32);
+
+//         let spherical_vgram = CompositeVariogram::new(vec![VariogramType::Spherical(
+//             SphericalVariogram::new(range, sill, vgram_rot),
+//         )]);
+
+//         // create search ellipsoid
+//         let search_ellipsoid = Ellipsoid::new(
+//             10000f32,
+//             10000f32,
+//             10000f32,
+//             CoordinateSystem::new(
+//                 Translation3::new(0.0, 0.0, 0.0),
+//                 UnitQuaternion::from_euler_angles(0.0, 0.0, 0f32.to_radians()),
+//             ),
+//         );
+
+//         // create a gsk system
+//         let parameters = GSKSystemParameters {
+//             max_group_size: 125,
+//         };
+
+//         let gsk = GSK::new(parameters);
+//         // let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
+
+//         println!("Reading Target Data");
+//         let targ = PointSet::<f32>::from_csv_index(
+//             "C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/target.csv",
+//             "X",
+//             "Y",
+//             "Z",
+//             "V",
+//         )
+//         .unwrap();
+
+//         let points = targ.points.clone();
+
+//         //map points in vec of group of points (64)
+//         //map points in vec of group of points (64)
+//         let mut block_inds = Vec::new();
+//         let all_points = points
+//             .iter()
+//             .enumerate()
+//             .map(|(i, point)| {
+//                 let aabb = Aabb::new(
+//                     Point3::new(point.x, point.y, point.z),
+//                     Point3::new(point.x + 5.0, point.y + 5.0, point.z + 10.0),
+//                 );
+
+//                 let disc_points = aabb.discretize(5f32, 5f32, 10f32);
+//                 block_inds.append(vec![i; disc_points.len()].as_mut());
+//                 disc_points
+//             })
+//             .flatten()
+//             .collect::<Vec<_>>();
+
+//         let (groups, _inds) = optimize_groups(all_points.as_slice(), 1f32, 1f32, 1f32, 5, 5, 5);
+
+//         let orientations = vec![UnitQuaternion::identity(); groups.len()];
+//         let node_provider = PointGroupProvider::from_groups(groups.clone(), orientations);
+//         let mut params = ConditioningParams::default();
+//         params.max_n_cond = 64;
+//         params.max_octant = 10000;
+//         let time1 = std::time::Instant::now();
+//         let values = gsk.estimate::<SKPointSupportBuilder, SolvedLUOKSystem, _, _, _>(
+//             &cond,
+//             &params,
+//             spherical_vgram,
+//             search_ellipsoid,
+//             &node_provider,
+//         );
+//         let time2 = std::time::Instant::now();
+//         println!("Time: {:?}", (time2 - time1).as_secs());
+//         println!(
+//             "Points per minute: {}",
+//             values.len() as f32 / (time2 - time1).as_secs_f32() * 60.0
+//         );
+
+//         let mut out = File::create("./test_results/lu_ok_point.txt").unwrap();
+//         let _ = out.write_all(b"x,y,z,v\n");
+//         let _ = out.write_all(b"4\n");
+//         let _ = out.write_all(b"x\n");
+//         let _ = out.write_all(b"y\n");
+//         let _ = out.write_all(b"z\n");
+//         let _ = out.write_all(b"value\n");
+
+//         for (point, value) in groups.iter().flatten().zip(values.iter()) {
+//             //println!("point: {:?}, value: {}", point, value);
+//             let _ = out
+//                 .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+//         }
+
+//         let mut out = File::create("./test_results/lu_ok_cond_data.txt").unwrap();
+//         let _ = out.write_all(b"x,y,z,v\n");
+
+//         for (point, value) in cond.points.iter().zip(cond.data.iter()) {
+//             //println!("point: {:?}, value: {}", point, value);
+//             let _ = out
+//                 .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+//         }
+
+//         let mut out = File::create("./test_results/lu_ok_point.csv").unwrap();
+//         //write header
+//         let _ = out.write_all("X,Y,Z,DX,DY,DZ,V\n".as_bytes());
+
+//         //write each row
+
+//         for (point, value) in groups.iter().flatten().zip(values.iter()) {
+//             //println!("point: {:?}, value: {}", point, value);
+//             let _ = out.write_all(
+//                 format!(
+//                     "{},{},{},{},{},{},{}\n",
+//                     point.x, point.y, point.z, 5, 5, 10, value
+//                 )
+//                 .as_bytes(),
+//             );
+//         }
+//     }
+
+//     #[test]
+//     fn gsk_sk_test() {
+//         // create a gridded database from a csv file (walker lake)
+//         println!("Reading Cond Data");
+//         let mut cond = PointSet::from_csv_index("C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/mineralized_domain_composites.csv", "X", "Y", "Z", "CU")
+//             .expect("Failed to create gdb");
+
+//         let mt = ZeroMeanTransform::from(cond.data());
+//         cond.data.iter_mut().for_each(|x| *x = mt.transform(*x));
+
+//         let vgram_rot = UnitQuaternion::identity();
+//         let range = Vector3::new(
+//             WideF32x8::splat(200.0),
+//             WideF32x8::splat(200.0),
+//             WideF32x8::splat(200.0),
+//         );
+//         let sill = WideF32x8::splat(1.0f32);
+
+//         let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
+
+//         // create search ellipsoid
+//         let search_ellipsoid = Ellipsoid::new(
+//             200f32,
+//             200f32,
+//             200f32,
+//             CoordinateSystem::new(Translation3::new(0.0, 0.0, 0.0), UnitQuaternion::identity()),
+//         );
+
+//         // create a gsk system
+//         let parameters = GSKSystemParameters {
+//             max_group_size: 250,
+//         };
+//         let gsk = GSK::new(parameters);
+//         // let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
+
+//         println!("Reading Target Data");
+//         let targ = PointSet::<f32>::from_csv_index(
+//             "C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/target.csv",
+//             "X",
+//             "Y",
+//             "Z",
+//             "V",
+//         )
+//         .unwrap();
+
+//         let points = targ.points.clone();
+
+//         //map points in vec of group of points (64)
+//         let mut groups = Vec::new();
+//         let mut group = Vec::new();
+//         for (_, point) in points.iter().enumerate() {
+//             for x in 0..5 {
+//                 for y in 0..5 {
+//                     for z in 0..10 {
+//                         group.push(Point3::new(
+//                             point.x + x as f32,
+//                             point.y + y as f32,
+//                             point.z + z as f32,
+//                         ));
+//                     }
+//                 }
+//             }
+
+//             groups.push(group.clone());
+//             group.clear();
+//         }
+
+//         let node_provider = PointGroupProvider::from_groups(
+//             groups.clone(),
+//             vec![UnitQuaternion::identity(); groups.len()],
+//         );
+//         let time1 = std::time::Instant::now();
+//         let values =
+//             gsk.estimate::<SKPointSupportBuilder, ModifiedMiniLUSystem<SolvedLUSKSystem, MeanTransfrom>, _, _, _>(&cond, &Default::default(), spherical_vgram, search_ellipsoid, &node_provider);
+//         let time2 = std::time::Instant::now();
+//         println!("Time: {:?}", (time2 - time1).as_secs());
+//         println!(
+//             "Points per minute: {}",
+//             values.len() as f32 / (time2 - time1).as_secs_f32() * 60.0
+//         );
+
+//         //save values to file for visualization
+
+//         let mut out = File::create("./test_results/lu_sk_block_mean.txt").unwrap();
+//         let _ = out.write_all(b"surfs\n");
+//         let _ = out.write_all(b"4\n");
+//         let _ = out.write_all(b"x\n");
+//         let _ = out.write_all(b"y\n");
+//         let _ = out.write_all(b"z\n");
+//         let _ = out.write_all(b"value\n");
+
+//         for (point, value) in points.iter().zip(values.iter()) {
+//             //println!("point: {:?}, value: {}", point, value);
+//             let _ = out
+//                 .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+//         }
+
+//         let mut out = File::create("./test_results/lu_ok_block_mean_cond_data.txt").unwrap();
+//         let _ = out.write_all(b"surfs\n");
+//         let _ = out.write_all(b"4\n");
+//         let _ = out.write_all(b"x\n");
+//         let _ = out.write_all(b"y\n");
+//         let _ = out.write_all(b"z\n");
+//         let _ = out.write_all(b"value\n");
+
+//         for (point, value) in cond.points.iter().zip(cond.data.iter()) {
+//             //println!("point: {:?}, value: {}", point, value);
+//             let _ = out
+//                 .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+//         }
+
+//         let mut out = File::create("./test_results/lu_sk_block_mean..csv").unwrap();
+//         //write header
+//         let _ = out.write_all("X,Y,Z,XS,YS,ZS,V\n".as_bytes());
+
+//         //write each row
+
+//         for (point, value) in points.iter().zip(values.iter()) {
+//             //println!("point: {:?}, value: {}", point, value);
+//             let _ = out.write_all(
+//                 format!(
+//                     "{},{},{},{},{},{},{}\n",
+//                     point.x, point.y, point.z, 5, 5, 10, value
+//                 )
+//                 .as_bytes(),
+//             );
+//         }
+//     }
+
+//     #[test]
+//     fn gsk_ok_db_test() {
+//         // create a gridded database from a csv file (walker lake)
+//         println!("Reading Cond Data");
+//         let cond = PointSet::from_csv_index("C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/mineralized_domain_composites.csv", "X", "Y", "Z", "CU")
+//             .expect("Failed to create gdb");
+
+//         //
+
+//         let vgram_rot = UnitQuaternion::identity();
+//         let range = Vector3::new(
+//             WideF32x8::splat(200.0),
+//             WideF32x8::splat(200.0),
+//             WideF32x8::splat(200.0),
+//         );
+//         let sill = WideF32x8::splat(1.0f32);
+
+//         let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
+
+//         // create search ellipsoid
+//         let search_ellipsoid = Ellipsoid::new(
+//             200f32,
+//             200f32,
+//             200f32,
+//             CoordinateSystem::new(Translation3::new(0.0, 0.0, 0.0), UnitQuaternion::identity()),
+//         );
+
+//         // create a gsk system
+//         let group_size = 10;
+//         let parameters = GSKSystemParameters {
+//             max_group_size: group_size,
+//         };
+
+//         let gsk = GSK::new(parameters);
+//         // let gsk = GSK::new(cond.clone(), spherical_vgram, search_ellipsoid, parameters);
+
+//         println!("Reading Target Data");
+//         let targ = PointSet::<f32>::from_csv_index(
+//             "C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/target.csv",
+//             "X",
+//             "Y",
+//             "Z",
+//             "V",
+//         )
+//         .unwrap();
+
+//         let points = targ.points.clone();
+
+//         //map points in vec of group of points (64)
+//         let mut groups = Vec::new();
+//         let mut group = Vec::new();
+//         for (i, point) in points.iter().enumerate() {
+//             //iterate over 5x5x10 grid originating at point
+//             let mut block = Vec::new();
+//             for x in 0..5 {
+//                 for y in 0..5 {
+//                     for z in 0..10 {
+//                         block.push(Point3::new(
+//                             point.x + x as f32,
+//                             point.y + y as f32,
+//                             point.z + z as f32,
+//                         ));
+//                     }
+//                 }
+//             }
+//             group.push(block);
+
+//             if (i % group_size - 1 == 0 && i != 0) || i == points.len() - 1 {
+//                 groups.push(group.clone());
+//                 group.clear();
+//             }
+//         }
+
+//         let node_provider = VolumeGroupProvider::from_groups(
+//             groups.clone(),
+//             vec![UnitQuaternion::identity(); groups.len()],
+//         );
+//         let time1 = std::time::Instant::now();
+//         let values = gsk.estimate::<SKVolumeSupportBuilder, SolvedLUOKSystem, _, _, _>(
+//             &cond,
+//             &Default::default(),
+//             spherical_vgram,
+//             search_ellipsoid,
+//             &node_provider,
+//         );
+//         let time2 = std::time::Instant::now();
+//         println!("Time: {:?}", (time2 - time1).as_secs());
+//         println!(
+//             "Points per minute: {}",
+//             values.len() as f32 / (time2 - time1).as_secs_f32() * 60.0
+//         );
+
+//         //save values to file for visualization
+
+//         let mut out = File::create("./test_results/lu_ok_db.txt").unwrap();
+//         let _ = out.write_all(b"surfs\n");
+//         let _ = out.write_all(b"4\n");
+//         let _ = out.write_all(b"x\n");
+//         let _ = out.write_all(b"y\n");
+//         let _ = out.write_all(b"z\n");
+//         let _ = out.write_all(b"value\n");
+
+//         for (point, value) in points.iter().zip(values.iter()) {
+//             //println!("point: {:?}, value: {}", point, value);
+//             let _ = out
+//                 .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+//         }
+
+//         let mut out = File::create("./test_results/lu_ok_db_cond_data.txt").unwrap();
+//         let _ = out.write_all(b"surfs\n");
+//         let _ = out.write_all(b"4\n");
+//         let _ = out.write_all(b"x\n");
+//         let _ = out.write_all(b"y\n");
+//         let _ = out.write_all(b"z\n");
+//         let _ = out.write_all(b"value\n");
+
+//         for (point, value) in cond.points.iter().zip(cond.data.iter()) {
+//             //println!("point: {:?}, value: {}", point, value);
+//             let _ = out
+//                 .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+//         }
+
+//         let mut out = File::create("./test_results/lu_ok_db.csv").unwrap();
+//         //write header
+//         let _ = out.write_all("X,Y,Z,XS,YS,ZS,V\n".as_bytes());
+
+//         //write each row
+
+//         for (point, value) in points.iter().zip(values.iter()) {
+//             //println!("point: {:?}, value: {}", point, value);
+//             let _ = out.write_all(
+//                 format!(
+//                     "{},{},{},{},{},{},{}\n",
+//                     point.x, point.y, point.z, 5, 5, 10, value
+//                 )
+//                 .as_bytes(),
+//             );
+//         }
+//     }
+// }

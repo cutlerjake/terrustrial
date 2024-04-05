@@ -1,27 +1,9 @@
 pub mod cpu_calculator;
-// pub mod cuda_calculator;
 
-// use bvh::aabb::Aabb;
-// use cudarc::driver::DeviceRepr;
 use nalgebra::UnitQuaternion;
 
-// pub trait IntersectsAABB {
-//     fn intersects_aabb(&self, aabb: &bvh::aabb::Aabb<f32, 3>) -> bool;
-// }
-
-// impl IntersectsAABB for Aabb<f32, 3> {
-//     fn intersects_aabb(&self, aabb: &bvh::aabb::Aabb<f32, 3>) -> bool {
-//         self.min.x <= aabb.max.x
-//             && self.max.x >= aabb.min.x
-//             && self.min.y <= aabb.max.y
-//             && self.max.y >= aabb.min.y
-//             && self.min.z <= aabb.max.z
-//             && self.max.z >= aabb.min.z
-//     }
-// }
-
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug)]
 pub struct LagBounds {
     pub lb: f32,
     pub ub: f32,

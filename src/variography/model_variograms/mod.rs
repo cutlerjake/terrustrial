@@ -1,10 +1,7 @@
 use nalgebra::{SimdValue, UnitQuaternion, Vector3};
 
-pub mod aniso_fitter;
 pub mod composite;
-pub mod iso_composite;
 pub mod iso_exponential;
-pub mod iso_fitter;
 pub mod iso_gaussian;
 pub mod iso_nugget;
 pub mod iso_spherical;

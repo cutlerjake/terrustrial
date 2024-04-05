@@ -15,38 +15,31 @@ default = ["simba", "simba/wide"]
 packed = ["simba", "simba/packed_simd"]
 
 [dependencies]
-#linalg
+# Linalg
 faer = "0.18.2"
-approx = "0.5.1"
-# faer-core = "0.17.1"
-# faer-cholesky = "0.17.1"
-nalgebra = { version = "0.32.3", features = ["std"] }
+nalgebra = { version = "0.32.3", features = ["std", "serde-serialize"] }
 ndarray = "0.15.6"
-num-traits = "0.2.15"
-parry3d = { version = "0.13.5", features = ["simd-stable"] }
-rand = "0.8.5"
-rstar = { version = "0.11.0", features = ["serde"] }
 dyn-stack = "0.10.0"
 
-serde = { version = "1", features = ["derive"] }
-
+# Math
+parry3d = { version = "0.13.5", features = ["simd-stable"] }
+rstar = { version = "0.11.0", features = ["serde"] }
+rand = "0.8.5"
+rand_distr = "0.4.3"
+num-traits = "0.2.15"
+approx = "0.5.1"
 simba = { version = "0.8.1", optional = true }
-bitvec = "1.0.1"
+
+# Utils
+serde = { version = "1", features = ["derive"] }
 ordered-float = "3.7.0"
+itertools = "0.11.0"
+permutation = "0.4.1"
 indicatif = { version = "0.17.5", features = ["rayon"] }
 rayon = "1.8.1"
 csv = "1.2.2"
-itertools = "0.11.0"
-rand_distr = "0.4.3"
 
-bytemuck = { version = "1.14.0", features = ["derive"] }
-rmpfit = "0.3.0"
-argmin = { version = "0.8" }
-argmin-math = { version = "0.3", features = [
-    "ndarray_latest-serde",
-    "nalgebra_latest-serde",
-] }
-permutation = "0.4.1"
+
 #Fails to build with rust 1.73 due to packed_simd_2 dependency
 #simply updates dependency to packed_simd 0.3.9
 #subscribed to merge request on github, remove when merged

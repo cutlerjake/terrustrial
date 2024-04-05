@@ -603,95 +603,95 @@ where
     }
 }
 
-pub struct SimpleKriging<S, V, T>
-where
-    V: VariogramModel<T>,
-    T: SimdPartialOrd + SimdRealField + SimdValue<Element = f32> + Copy,
-{
-    conditioning_data: S,
-    variogram_model: V,
-    search_ellipsoid: Ellipsoid,
-    query_params: ConditioningParams,
-    zero_mean_transformer: ZeroMeanTransform<f32>,
-    phantom: PhantomData<T>,
-}
+// pub struct SimpleKriging<S, V, T>
+// where
+//     V: VariogramModel<T>,
+//     T: SimdPartialOrd + SimdRealField + SimdValue<Element = f32> + Copy,
+// {
+//     conditioning_data: S,
+//     variogram_model: V,
+//     search_ellipsoid: Ellipsoid,
+//     query_params: ConditioningParams,
+//     zero_mean_transformer: ZeroMeanTransform<f32>,
+//     phantom: PhantomData<T>,
+// }
 
-impl<S, V, T> SimpleKriging<S, V, T>
-where
-    S: ConditioningProvider<Ellipsoid, f32, ConditioningParams> + Sync + std::marker::Send,
-    V: VariogramModel<T> + Sync + std::marker::Send,
-    T: SimdPartialOrd + SimdRealField,
-    T: SimdValue<Element = f32> + Copy,
-{
-    /// Create a new simple kriging estimator with the given parameters
-    /// # Arguments
-    /// * `conditioning_data` - The data to condition the kriging system on
-    /// * `variogram_model` - The variogram model to use
-    /// * `search_ellipsoid` - The search ellipsoid to use
-    /// * `kriging_parameters` - The kriging parameters to use
-    /// # Returns
-    /// A new simple kriging estimator
-    pub fn new(
-        conditioning_data: S,
-        variogram_model: V,
-        search_ellipsoid: Ellipsoid,
-        query_params: ConditioningParams,
-        mean: f32,
-    ) -> Self {
-        let mut conditioning_data = conditioning_data;
-        //construct zero mean transformer
-        let zero_mean_transformer = ZeroMeanTransform::new(mean);
+// impl<S, V, T> SimpleKriging<S, V, T>
+// where
+//     S: ConditioningProvider<Ellipsoid, f32, ConditioningParams> + Sync + std::marker::Send,
+//     V: VariogramModel<T> + Sync + std::marker::Send,
+//     T: SimdPartialOrd + SimdRealField,
+//     T: SimdValue<Element = f32> + Copy,
+// {
+//     /// Create a new simple kriging estimator with the given parameters
+//     /// # Arguments
+//     /// * `conditioning_data` - The data to condition the kriging system on
+//     /// * `variogram_model` - The variogram model to use
+//     /// * `search_ellipsoid` - The search ellipsoid to use
+//     /// * `kriging_parameters` - The kriging parameters to use
+//     /// # Returns
+//     /// A new simple kriging estimator
+//     pub fn new(
+//         conditioning_data: &S,
+//         variogram_model: V,
+//         search_ellipsoid: Ellipsoid,
+//         query_params: ConditioningParams,
+//         mean: f32,
+//     ) -> Self {
+//         let mut conditioning_data = conditioning_data;
+//         //construct zero mean transformer
+//         let zero_mean_transformer = ZeroMeanTransform::new(mean);
 
-        //aply zero mean transformer
-        conditioning_data.data_mut().iter_mut().for_each(|v| {
-            *v = zero_mean_transformer.transform(*v);
-        });
-        Self {
-            conditioning_data,
-            variogram_model,
-            search_ellipsoid,
-            query_params,
-            zero_mean_transformer,
-            phantom: PhantomData,
-        }
-    }
+//         //aply zero mean transformer
+//         conditioning_data.data_mut().iter_mut().for_each(|v| {
+//             *v = zero_mean_transformer.transform(*v);
+//         });
+//         Self {
+//             conditioning_data,
+//             variogram_model,
+//             search_ellipsoid,
+//             query_params,
+//             zero_mean_transformer,
+//             phantom: PhantomData,
+//         }
+//     }
 
-    /// Perform simple kriging at all kriging points
-    pub fn krig<SKB>(&self, kriging_points: &[Point3<f32>]) -> Vec<f32>
-    where
-        SKB: SKBuilder<Support = S::Shape>,
-    {
-        //construct kriging system
-        let kriging_system = SimpleKrigingSystem::new(self.query_params.max_octant * 8);
+//     /// Perform simple kriging at all kriging points
+//     pub fn krig<SKB>(&self, kriging_points: &[Point3<f32>]) -> Vec<f32>
+//     where
+//         SKB: SKBuilder<Support = S::Shape>,
+//     {
+//         //construct kriging system
+//         let kriging_system = SimpleKrigingSystem::new(self.query_params.max_octant * 8);
 
-        kriging_points
-            .par_iter()
-            .progress()
-            .map_with(
-                (kriging_system.clone(), self.search_ellipsoid.clone()),
-                |(local_system, ellipsoid), kriging_point| {
-                    //translate search ellipsoid to kriging point
-                    ellipsoid.translate_to(kriging_point);
-                    //get nearest points and values
-                    let (_, cond_values, cond_points, _) =
-                        self.conditioning_data
-                            .query(kriging_point, ellipsoid, &self.query_params);
+//         kriging_points
+//             .par_iter()
+//             .progress()
+//             .map_with(
+//                 (kriging_system.clone(), self.search_ellipsoid.clone()),
+//                 |(local_system, ellipsoid), kriging_point| {
+//                     //translate search ellipsoid to kriging point
+//                     ellipsoid.translate_to(kriging_point);
+//                     //get nearest points and values
+//                     let (_, cond_values, cond_points, _) =
+//                         self.conditioning_data
+//                             .query(kriging_point, ellipsoid, &self.query_params);
 
-                    //build kriging system for point
-                    local_system.build_system::<V, T, SKB>(
-                        &cond_points,
-                        cond_values.as_slice(),
-                        kriging_point,
-                        &self.variogram_model,
-                    );
+//                     //build kriging system for point
+//                     local_system.build_system::<V, T, SKB>(
+//                         &cond_points,
+//                         cond_values.as_slice(),
+//                         kriging_point,
+//                         &self.variogram_model,
+//                     );
 
-                    self.zero_mean_transformer
-                        .back_transform(local_system.estimate())
-                },
-            )
-            .collect::<Vec<f32>>()
-    }
-}
+//                     self.zero_mean_transformer
+//                         .back_transform(local_system.estimate())
+//                 },
+//             )
+//             .collect::<Vec<f32>>()
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
@@ -740,125 +740,125 @@ mod tests {
         assert_eq!(variance, 0.49257421);
     }
 
-    #[test]
-    fn sk_test() {
-        // Define the coordinate system for the grid
-        // origing at x = 0, y = 0, z = 0
-        // azimuth = 0, dip = 0, plunge = 0
+    // #[test]
+    // fn sk_test() {
+    //     // Define the coordinate system for the grid
+    //     // origing at x = 0, y = 0, z = 0
+    //     // azimuth = 0, dip = 0, plunge = 0
 
-        // create a gridded database from a csv file (walker lake)
-        println!("Reading Cond Data");
-        let gdb = PointSet::from_csv_index("C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/mineralized_domain_composites.csv", "X", "Y", "Z", "CU")
-            .expect("Failed to create gdb");
+    //     // create a gridded database from a csv file (walker lake)
+    //     println!("Reading Cond Data");
+    //     let gdb = PointSet::from_csv_index("C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/mineralized_domain_composites.csv", "X", "Y", "Z", "CU")
+    //         .expect("Failed to create gdb");
 
-        let vgram_rot = UnitQuaternion::identity();
-        let cs = CoordinateSystem::new(Default::default(), Default::default());
-        let range = Vector3::new(
-            WideF32x8::splat(200.0),
-            WideF32x8::splat(200.0),
-            WideF32x8::splat(200.0),
-        );
-        let sill = WideF32x8::splat(1.0f32);
+    //     let vgram_rot = UnitQuaternion::identity();
+    //     let cs = CoordinateSystem::new(Default::default(), Default::default());
+    //     let range = Vector3::new(
+    //         WideF32x8::splat(200.0),
+    //         WideF32x8::splat(200.0),
+    //         WideF32x8::splat(200.0),
+    //     );
+    //     let sill = WideF32x8::splat(1.0f32);
 
-        let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
+    //     let spherical_vgram = SphericalVariogram::new(range, sill, vgram_rot);
 
-        // create search ellipsoid
-        let search_ellipsoid = Ellipsoid::new(200f32, 200f32, 200f32, cs.clone());
+    //     // create search ellipsoid
+    //     let search_ellipsoid = Ellipsoid::new(200f32, 200f32, 200f32, cs.clone());
 
-        // create a query engine for the conditioning data
-        //let query_engine = GriddedDataBaseOctantQueryEngine::new(search_ellipsoid, &gdb, 16);
+    //     // create a query engine for the conditioning data
+    //     //let query_engine = GriddedDataBaseOctantQueryEngine::new(search_ellipsoid, &gdb, 16);
 
-        let mt = ZeroMeanTransform::from(gdb.data());
-        let mean = mt.mean();
+    //     let mt = ZeroMeanTransform::from(gdb.data());
+    //     let mean = mt.mean();
 
-        // create a gsgs system
-        let sk = SimpleKriging::new(
-            gdb.clone(),
-            spherical_vgram,
-            search_ellipsoid,
-            ConditioningParams::default(),
-            mean,
-        );
+    //     // create a gsgs system
+    //     let sk = SimpleKriging::new(
+    //         gdb.clone(),
+    //         spherical_vgram,
+    //         search_ellipsoid,
+    //         ConditioningParams::default(),
+    //         mean,
+    //     );
 
-        //simulate values on grid
-        // let points = krig_db
-        //     .raw_grid
-        //     .grid
-        //     .indexed_iter()
-        //     .map(|(ind, _)| krig_db.point_at_ind(&[ind.0, ind.1, ind.2]))
-        //     .collect_vec();
-        //"C:\Users\2jake\OneDrive - McGill University\Fall2022\MIME525\Project4\points_jacob.txt"
-        println!("Reading Target Data");
-        let targ = PointSet::<f32>::from_csv_index(
-            "C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/target.csv",
-            "X",
-            "Y",
-            "Z",
-            "V",
-        )
-        .unwrap();
-        let points = targ.points.clone();
-        // let points = (0..400)
-        //     .cartesian_product(0..400)
-        //     .map(|(x, y)| {
-        //         let point = Point3::new(x as f32, y as f32, 0.0);
-        //         point
-        //     })
-        //     .collect_vec();
-        let time1 = std::time::Instant::now();
-        let values = sk.krig::<SKPointSupportBuilder>(points.as_slice());
-        let time2 = std::time::Instant::now();
-        println!("Time: {:?}", (time2 - time1).as_secs());
-        println!(
-            "Points per minute: {}",
-            values.len() as f32 / (time2 - time1).as_secs_f32() * 60.0
-        );
+    //     //simulate values on grid
+    //     // let points = krig_db
+    //     //     .raw_grid
+    //     //     .grid
+    //     //     .indexed_iter()
+    //     //     .map(|(ind, _)| krig_db.point_at_ind(&[ind.0, ind.1, ind.2]))
+    //     //     .collect_vec();
+    //     //"C:\Users\2jake\OneDrive - McGill University\Fall2022\MIME525\Project4\points_jacob.txt"
+    //     println!("Reading Target Data");
+    //     let targ = PointSet::<f32>::from_csv_index(
+    //         "C:/Users/2jake/OneDrive - McGill University/Fall2022/MIME525/Project4/target.csv",
+    //         "X",
+    //         "Y",
+    //         "Z",
+    //         "V",
+    //     )
+    //     .unwrap();
+    //     let points = targ.points.clone();
+    //     // let points = (0..400)
+    //     //     .cartesian_product(0..400)
+    //     //     .map(|(x, y)| {
+    //     //         let point = Point3::new(x as f32, y as f32, 0.0);
+    //     //         point
+    //     //     })
+    //     //     .collect_vec();
+    //     let time1 = std::time::Instant::now();
+    //     let values = sk.krig::<SKPointSupportBuilder>(points.as_slice());
+    //     let time2 = std::time::Instant::now();
+    //     println!("Time: {:?}", (time2 - time1).as_secs());
+    //     println!(
+    //         "Points per minute: {}",
+    //         values.len() as f32 / (time2 - time1).as_secs_f32() * 60.0
+    //     );
 
-        //save values to file for visualization
+    //     //save values to file for visualization
 
-        let mut out = File::create("./test_results/sk.txt").unwrap();
-        let _ = out.write_all(b"surfs\n");
-        let _ = out.write_all(b"4\n");
-        let _ = out.write_all(b"x\n");
-        let _ = out.write_all(b"y\n");
-        let _ = out.write_all(b"z\n");
-        let _ = out.write_all(b"value\n");
+    //     let mut out = File::create("./test_results/sk.txt").unwrap();
+    //     let _ = out.write_all(b"surfs\n");
+    //     let _ = out.write_all(b"4\n");
+    //     let _ = out.write_all(b"x\n");
+    //     let _ = out.write_all(b"y\n");
+    //     let _ = out.write_all(b"z\n");
+    //     let _ = out.write_all(b"value\n");
 
-        for (point, value) in points.iter().zip(values.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out
-                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
-        }
+    //     for (point, value) in points.iter().zip(values.iter()) {
+    //         //println!("point: {:?}, value: {}", point, value);
+    //         let _ = out
+    //             .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+    //     }
 
-        let mut out = File::create("./test_results/sk_cond_data.txt").unwrap();
-        let _ = out.write_all(b"surfs\n");
-        let _ = out.write_all(b"4\n");
-        let _ = out.write_all(b"x\n");
-        let _ = out.write_all(b"y\n");
-        let _ = out.write_all(b"z\n");
-        let _ = out.write_all(b"value\n");
+    //     let mut out = File::create("./test_results/sk_cond_data.txt").unwrap();
+    //     let _ = out.write_all(b"surfs\n");
+    //     let _ = out.write_all(b"4\n");
+    //     let _ = out.write_all(b"x\n");
+    //     let _ = out.write_all(b"y\n");
+    //     let _ = out.write_all(b"z\n");
+    //     let _ = out.write_all(b"value\n");
 
-        for (point, value) in gdb.points.iter().zip(gdb.data.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out
-                .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
-        }
+    //     for (point, value) in gdb.points.iter().zip(gdb.data.iter()) {
+    //         //println!("point: {:?}, value: {}", point, value);
+    //         let _ = out
+    //             .write_all(format!("{} {} {} {}\n", point.x, point.y, point.z, value).as_bytes());
+    //     }
 
-        let mut out = File::create("./test_results/sk.csv").unwrap();
-        //write header
-        let _ = out.write_all("X,Y,Z,XS,YS,ZS,V\n".as_bytes());
+    //     let mut out = File::create("./test_results/sk.csv").unwrap();
+    //     //write header
+    //     let _ = out.write_all("X,Y,Z,XS,YS,ZS,V\n".as_bytes());
 
-        //write each row
+    //     //write each row
 
-        for (point, value) in points.iter().zip(values.iter()) {
-            //println!("point: {:?}, value: {}", point, value);
-            let _ = out.write_all(
-                format!(
-                    "{},{},{},{},{},{},{}\n",
-                    point.x, point.y, point.z, 5, 5, 10, value
-                )
-                .as_bytes(),
-            );
-        }
-    }
+    //     for (point, value) in points.iter().zip(values.iter()) {
+    //         //println!("point: {:?}, value: {}", point, value);
+    //         let _ = out.write_all(
+    //             format!(
+    //                 "{},{},{},{},{},{},{}\n",
+    //                 point.x, point.y, point.z, 5, 5, 10, value
+    //             )
+    //             .as_bytes(),
+    //         );
+    //     }
+    // }
 }

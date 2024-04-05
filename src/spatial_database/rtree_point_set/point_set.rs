@@ -455,17 +455,13 @@ impl ConditioningProvider<Ellipsoid, f32, ConditioningParams> for PointSet<f32> 
         (inds, data, points, res)
     }
 
-    fn points(&self) -> &[Point3<f32>] {
-        self.points.as_slice()
-    }
+    // fn points(&self) -> &[Point3<f32>] {
+    //     self.points.as_slice()
+    // }
 
-    fn data(&self) -> &[f32] {
-        self.data.as_slice()
-    }
-
-    fn data_mut(&mut self) -> &mut [f32] {
-        self.data.as_mut_slice()
-    }
+    // fn data(&self) -> &[f32] {
+    //     self.data.as_slice()
+    // }
 }
 
 #[cfg(test)]
