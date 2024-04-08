@@ -1,5 +1,5 @@
 use nalgebra::{
-    Isometry, Isometry3, Point3, SimdRealField, SimdValue, Translation3, UnitQuaternion,
+    Isometry, Isometry3, Point3, SimdRealField, SimdValue, Translation3, UnitQuaternion, Vector3,
 };
 use num_traits::Float;
 
@@ -51,14 +51,14 @@ where
         }
     }
 
-    /// Set the origin of the coordinate system
+    /// Set the origin of the coordinate system.
     pub fn set_origin(&mut self, origin: Point3<T>) {
         self.translation = Translation3::new(origin.x, origin.y, origin.z);
         self.local_to_world = Isometry::from_parts(self.translation, self.rotation);
         self.world_to_local = self.local_to_world.inverse();
     }
 
-    //set the rotation of the coordinate system
+    /// Set the rotation of the coordinate system.
     pub fn set_rotation(&mut self, quat: UnitQuaternion<T>) {
         self.rotation = quat;
         self.inverse_rotation = quat.inverse();
@@ -66,7 +66,7 @@ where
         self.world_to_local = self.local_to_world.inverse();
     }
 
-    /// Create a new coordinate system from an origin and euler angles
+    /// Create a new coordinate system from an origin and euler angles.
     pub fn from_origin_and_euler_angles(origin: Point3<T>, roll: T, pitch: T, yaw: T) -> Self {
         //create rotation quaternion from euler angles
         let rot_quaternion = UnitQuaternion::from_euler_angles(roll, pitch, yaw);
@@ -82,36 +82,24 @@ where
     }
 
     /// Convert a point from global to local coordinates
-    pub fn global_to_local(&self, point: &Point3<T>) -> Point3<T> {
+    pub fn world_to_local_point(&self, point: &Point3<T>) -> Point3<T> {
         self.world_to_local.transform_point(point)
     }
 
-    /// Vectorized version of global to local transformation
-    // pub fn vectorized_global_to_local_isomety(&self) -> Isometry3<f32x16> {
-    //     let rot = *self.world_to_local.rotation.quaternion();
-    //     let trans = self.world_to_local.translation;
-
-    //     let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<f32x16>().into());
-    //     let simd_trans = trans.vector.cast::<f32x16>().into();
-
-    //     Isometry3::from_parts(simd_trans, simd_rot)
-    // }
+    /// Convert a vector from global to local coordinates
+    pub fn world_to_local_vector(&self, vector: &Vector3<T>) -> Vector3<T> {
+        self.world_to_local.transform_vector(vector)
+    }
 
     /// Convert a point from local to global coordinates
-    pub fn local_to_global(&self, point: &Point3<T>) -> Point3<T> {
+    pub fn local_world_point(&self, point: &Point3<T>) -> Point3<T> {
         self.local_to_world.transform_point(point)
     }
 
-    // Vectorized version of local to global transformation
-    // pub fn vectorized_local_to_global(&self) -> Isometry3<f32x16> {
-    //     let rot = *self.local_to_world.rotation.quaternion();
-    //     let trans = self.local_to_world.translation;
-
-    //     let simd_rot = UnitQuaternion::from_quaternion(rot.coords.cast::<f32x16>().into());
-    //     let simd_trans = trans.vector.cast::<f32x16>().into();
-
-    //     Isometry3::from_parts(simd_trans, simd_rot)
-    // }
+    /// Convert a vector from local to global coordinates
+    pub fn local_world_vector(&self, vector: &Vector3<T>) -> Vector3<T> {
+        self.local_to_world.transform_vector(vector)
+    }
 }
 
 /// Octant of a point
@@ -142,7 +130,7 @@ mod tests {
         let coordinate_system =
             CoordinateSystem::from_origin_and_euler_angles(origin, roll, pitch, yaw);
         let point = Point3::new(1.0, 1.0, 1.0);
-        let transformed_point = coordinate_system.global_to_local(&point);
+        let transformed_point = coordinate_system.world_to_local_point(&point);
         assert_relative_eq!(transformed_point, point, epsilon = 1e-6);
     }
 
@@ -155,7 +143,7 @@ mod tests {
         let coordinate_system =
             CoordinateSystem::from_origin_and_euler_angles(origin, roll, pitch, yaw);
         let point = Point3::new(2.0, 2.0, 2.0);
-        let transformed_point = coordinate_system.global_to_local(&point);
+        let transformed_point = coordinate_system.world_to_local_point(&point);
         assert_relative_eq!(
             transformed_point,
             Point3::new(1.0, 1.0, 1.0),
@@ -172,7 +160,7 @@ mod tests {
         let coordinate_system =
             CoordinateSystem::from_origin_and_euler_angles(origin, roll, pitch, yaw);
         let point = Point3::new(1.0, 1.0, 0.0);
-        let transformed_point = coordinate_system.global_to_local(&point);
+        let transformed_point = coordinate_system.world_to_local_point(&point);
         assert_relative_eq!(
             transformed_point,
             Point3::new(1.0, -1.0, 0.0),
@@ -189,7 +177,7 @@ mod tests {
         let coordinate_system =
             CoordinateSystem::from_origin_and_euler_angles(origin, roll, pitch, yaw);
         let point = Point3::new(2.0, 1.0, 1.0);
-        let transformed_point = coordinate_system.global_to_local(&point);
+        let transformed_point = coordinate_system.world_to_local_point(&point);
         assert_relative_eq!(
             transformed_point,
             Point3::new(0f32, -1f32, 0f32),
@@ -207,7 +195,7 @@ mod tests {
         let coordinate_system =
             CoordinateSystem::from_origin_and_euler_angles(origin, roll, pitch, yaw);
         let point = Point3::new(2.0, 1.0, 1.0);
-        let transformed_point = coordinate_system.global_to_local(&point);
+        let transformed_point = coordinate_system.world_to_local_point(&point);
         assert_relative_eq!(
             transformed_point,
             Point3::new(0.7071068, -2.3371172, -0.19463491),
@@ -224,8 +212,8 @@ mod tests {
         let coordinate_system =
             CoordinateSystem::from_origin_and_euler_angles(origin, roll, pitch, yaw);
         let point = Point3::new(1.3660254, 4.38013939, 2.55171226);
-        let transformed_point = coordinate_system.global_to_local(&point);
-        let back_transformed_point = coordinate_system.local_to_global(&transformed_point);
+        let transformed_point = coordinate_system.world_to_local_point(&point);
+        let back_transformed_point = coordinate_system.local_world_point(&transformed_point);
         assert_relative_eq!(point, back_transformed_point, epsilon = 1e-6);
     }
 }

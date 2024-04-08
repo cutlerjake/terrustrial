@@ -2,6 +2,8 @@ use nalgebra::{Point3, UnitQuaternion};
 
 use super::NodeProvider;
 
+/// A node provider for groups of points.
+/// Suitable for point-point kriging. (conditioning and estimation/simulation nodes are points)
 pub struct PointGroupProvider {
     points: Vec<Point3<f32>>,
     orientations: Vec<UnitQuaternion<f32>>,

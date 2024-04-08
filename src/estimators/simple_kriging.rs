@@ -1,41 +1,15 @@
-use std::marker::PhantomData;
-
-use crate::{
-    geometry::{ellipsoid::Ellipsoid, Geometry},
-    spatial_database::{zero_mean::ZeroMeanTransform, ConditioningProvider},
-    variography::model_variograms::VariogramModel,
-};
-
+use crate::{spatial_database::SupportInterface, variography::model_variograms::VariogramModel};
 use dyn_stack::{GlobalPodBuffer, PodStack, ReborrowMut};
 use faer::{
     modules::{cholesky, core::mul::inner_prod::inner_prod_with_conj},
     MatRef, Parallelism,
 };
 use faer::{Conj, Mat};
-use indicatif::ParallelProgressIterator;
 use nalgebra::{Point3, SimdRealField, SimdValue, Vector3};
 use num_traits::Float;
-use rayon::prelude::*;
 use simba::simd::SimdPartialOrd;
 
-use super::{ConditioningParams, KrigingSystem};
-
-pub trait SupportInterface {
-    fn center(&self) -> Point3<f32>;
-}
-
-pub trait SupportTransform<T> {
-    fn transform(self) -> T;
-}
-
-impl<T> SupportTransform<T> for T
-where
-    T: SupportInterface,
-{
-    fn transform(self) -> Self {
-        self
-    }
-}
+use super::KrigingSystem;
 
 pub trait SKBuilder {
     type Support: SupportInterface + Send + Sync;
@@ -60,18 +34,6 @@ pub trait SKBuilder {
 }
 
 pub struct SKPointSupportBuilder;
-
-impl SupportInterface for Point3<f32> {
-    fn center(&self) -> Point3<f32> {
-        *self
-    }
-}
-
-impl SupportTransform<Vec<Point3<f32>>> for Point3<f32> {
-    fn transform(self) -> Vec<Point3<f32>> {
-        vec![self]
-    }
-}
 
 impl SKBuilder for SKPointSupportBuilder {
     type Support = Point3<f32>;
@@ -603,111 +565,12 @@ where
     }
 }
 
-// pub struct SimpleKriging<S, V, T>
-// where
-//     V: VariogramModel<T>,
-//     T: SimdPartialOrd + SimdRealField + SimdValue<Element = f32> + Copy,
-// {
-//     conditioning_data: S,
-//     variogram_model: V,
-//     search_ellipsoid: Ellipsoid,
-//     query_params: ConditioningParams,
-//     zero_mean_transformer: ZeroMeanTransform<f32>,
-//     phantom: PhantomData<T>,
-// }
-
-// impl<S, V, T> SimpleKriging<S, V, T>
-// where
-//     S: ConditioningProvider<Ellipsoid, f32, ConditioningParams> + Sync + std::marker::Send,
-//     V: VariogramModel<T> + Sync + std::marker::Send,
-//     T: SimdPartialOrd + SimdRealField,
-//     T: SimdValue<Element = f32> + Copy,
-// {
-//     /// Create a new simple kriging estimator with the given parameters
-//     /// # Arguments
-//     /// * `conditioning_data` - The data to condition the kriging system on
-//     /// * `variogram_model` - The variogram model to use
-//     /// * `search_ellipsoid` - The search ellipsoid to use
-//     /// * `kriging_parameters` - The kriging parameters to use
-//     /// # Returns
-//     /// A new simple kriging estimator
-//     pub fn new(
-//         conditioning_data: &S,
-//         variogram_model: V,
-//         search_ellipsoid: Ellipsoid,
-//         query_params: ConditioningParams,
-//         mean: f32,
-//     ) -> Self {
-//         let mut conditioning_data = conditioning_data;
-//         //construct zero mean transformer
-//         let zero_mean_transformer = ZeroMeanTransform::new(mean);
-
-//         //aply zero mean transformer
-//         conditioning_data.data_mut().iter_mut().for_each(|v| {
-//             *v = zero_mean_transformer.transform(*v);
-//         });
-//         Self {
-//             conditioning_data,
-//             variogram_model,
-//             search_ellipsoid,
-//             query_params,
-//             zero_mean_transformer,
-//             phantom: PhantomData,
-//         }
-//     }
-
-//     /// Perform simple kriging at all kriging points
-//     pub fn krig<SKB>(&self, kriging_points: &[Point3<f32>]) -> Vec<f32>
-//     where
-//         SKB: SKBuilder<Support = S::Shape>,
-//     {
-//         //construct kriging system
-//         let kriging_system = SimpleKrigingSystem::new(self.query_params.max_octant * 8);
-
-//         kriging_points
-//             .par_iter()
-//             .progress()
-//             .map_with(
-//                 (kriging_system.clone(), self.search_ellipsoid.clone()),
-//                 |(local_system, ellipsoid), kriging_point| {
-//                     //translate search ellipsoid to kriging point
-//                     ellipsoid.translate_to(kriging_point);
-//                     //get nearest points and values
-//                     let (_, cond_values, cond_points, _) =
-//                         self.conditioning_data
-//                             .query(kriging_point, ellipsoid, &self.query_params);
-
-//                     //build kriging system for point
-//                     local_system.build_system::<V, T, SKB>(
-//                         &cond_points,
-//                         cond_values.as_slice(),
-//                         kriging_point,
-//                         &self.variogram_model,
-//                     );
-
-//                     self.zero_mean_transformer
-//                         .back_transform(local_system.estimate())
-//                 },
-//             )
-//             .collect::<Vec<f32>>()
-//     }
-// }
-
 #[cfg(test)]
 mod tests {
 
-    use std::{fs::File, io::Write};
-
     use nalgebra::{UnitQuaternion, Vector3};
-    use simba::simd::WideF32x8;
 
-    use crate::{
-        geometry::ellipsoid::Ellipsoid,
-        spatial_database::{
-            coordinate_system::CoordinateSystem, rtree_point_set::point_set::PointSet,
-        },
-        variography::model_variograms::spherical::SphericalVariogram,
-    };
+    use crate::variography::model_variograms::spherical::SphericalVariogram;
 
     use super::*;
 

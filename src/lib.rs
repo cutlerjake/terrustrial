@@ -1,12 +1,11 @@
 use nalgebra::{Unit, UnitVector3, Vector3};
 
 pub mod declustering;
-pub mod decomposition;
+pub mod estimators;
 pub mod geometry;
-pub mod kriging;
 pub mod node_providers;
-pub mod simulation;
 pub mod spatial_database;
+pub mod systems;
 pub mod variography;
 
 pub mod re_export {

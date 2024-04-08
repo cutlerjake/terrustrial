@@ -7,8 +7,36 @@ pub mod coordinate_system;
 pub mod gridded_databases;
 pub mod normalized;
 pub mod rtree_point_set;
-pub mod value_modifiers;
 pub mod zero_mean;
+
+pub trait SupportInterface {
+    fn center(&self) -> Point3<f32>;
+}
+
+pub trait SupportTransform<T> {
+    fn transform(self) -> T;
+}
+
+impl<T> SupportTransform<T> for T
+where
+    T: SupportInterface,
+{
+    fn transform(self) -> Self {
+        self
+    }
+}
+
+impl SupportInterface for Point3<f32> {
+    fn center(&self) -> Point3<f32> {
+        *self
+    }
+}
+
+impl SupportTransform<Vec<Point3<f32>>> for Point3<f32> {
+    fn transform(self) -> Vec<Point3<f32>> {
+        vec![self]
+    }
+}
 
 pub trait ConditioningProvider<G, T, P> {
     type Shape;

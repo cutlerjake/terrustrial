@@ -2,6 +2,8 @@ use nalgebra::{Point3, UnitQuaternion};
 
 use super::NodeProvider;
 
+/// A node provider for a group of volumes.
+/// Suitable for block-point, block-block, and point-block kriging.
 pub struct VolumeGroupProvider {
     pub volumes: Vec<Vec<Point3<f32>>>,
     pub group_inds: Vec<usize>,

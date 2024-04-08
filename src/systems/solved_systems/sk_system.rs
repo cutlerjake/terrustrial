@@ -7,14 +7,14 @@ use faer::{
 use rand::{rngs::StdRng, Rng};
 use rand_distr::StandardNormal;
 
-use crate::decomposition::lu::LUSystem;
+use crate::systems::lu::LUSystem;
 
 use super::{SolvedLUSystem, SolvedSystemBuilder};
 
 #[derive(Clone)]
-pub struct SolvedLUOKSystemBuilder;
+pub struct SolvedLUSKSystemBuilder;
 
-impl SolvedSystemBuilder for SolvedLUOKSystemBuilder {
+impl SolvedSystemBuilder for SolvedLUSKSystemBuilder {
     type SolvedSystem = SolvedLUSKSystem;
 
     fn build(&self, system: &mut LUSystem) -> Self::SolvedSystem {
@@ -124,6 +124,7 @@ impl SolvedLUSystem for SolvedLUSKSystem {
 
 impl From<&mut LUSystem> for SolvedLUSKSystem {
     fn from(lu: &mut LUSystem) -> Self {
+        lu.compute_l_matrix();
         lu.compute_intermediate_mat();
         let l_gg = lu
             .l_mat

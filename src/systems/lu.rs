@@ -1,26 +1,19 @@
-use std::{
-    borrow::Borrow,
-    ops::{Add, Sub},
-};
-
-use crate::{kriging::simple_kriging::SKBuilder, variography::model_variograms::VariogramModel};
-
+use crate::estimators::simple_kriging::SKBuilder;
+use crate::variography::model_variograms::VariogramModel;
 use dyn_stack::{GlobalPodBuffer, PodStack, ReborrowMut};
 
 use faer::{
     linalg::{
-        matmul::{self, triangular::BlockStructure},
+        matmul::{self},
         triangular_solve::solve_upper_triangular_in_place,
     },
     modules::cholesky::{self, llt::compute::LltInfo},
     solvers::CholeskyError,
-    unzipped, zipped, Conj, Mat, MatMut, MatRef, Parallelism,
+    Conj, Mat, Parallelism,
 };
 use nalgebra::{SimdRealField, SimdValue};
 use rand::{rngs::StdRng, Rng};
 use rand_distr::StandardNormal;
-
-use super::solved_systems::SolvedLUSystem;
 
 pub struct LUSystem {
     pub l_mat: Mat<f32>,
@@ -35,6 +28,8 @@ pub struct LUSystem {
 }
 
 impl LUSystem {
+    /// Creates a new LU system with the specified number of conditioning and simulation points
+    /// The system will have dimensions of n_cond + n_sim
     pub fn new(n_sim: usize, n_cond: usize) -> Self {
         // L matrix will have dimensions of n_cond + n_Sim
         let n_total = n_sim + n_cond;
@@ -62,6 +57,10 @@ impl LUSystem {
         }
     }
 
+    /// Builds the covariance matrix for the system.
+    /// The covariance matrix is built from the conditioning and simulation points according to the structure of the SKBuilder.
+    /// The variogram model is used to compute the covariance between points.
+    /// Note: only the lower triangle of the covariance matrix is required.
     #[inline(always)]
     pub(crate) fn build_cov_matrix<V, T, SKB>(
         &mut self,
@@ -82,6 +81,10 @@ impl LUSystem {
         SKB::build_cov_mat(&mut self.l_mat, l_points, vgram)
     }
 
+    /// Computes the L matrix from the covariance matrix.
+    /// The L matrix is the Cholesky decomposition of the covariance matrix.
+    /// The L matrix is stored in the lower triangle of the covariance matrix.
+    /// The upper triangle of the covariance matrix is not used.
     #[inline(always)]
     pub(crate) fn compute_l_matrix(&mut self) {
         //create dynstacks
@@ -98,6 +101,7 @@ impl LUSystem {
         .unwrap();
     }
 
+    /// Build and compute the L matrix for the system.
     #[inline(always)]
     pub(crate) fn build_l_matrix<V, T, SKB>(
         &mut self,
@@ -116,7 +120,6 @@ impl LUSystem {
         //println!("cov_mat: {:?}", self.l_mat);
 
         //create dynstacks
-        //let mut cholesky_compute_stack = DynStack::new(&mut self.cholesky_compute_mem);
         let mut cholesky_compute_stack = PodStack::new(&mut self.buffer);
 
         //compute cholseky decomposition of L matrix
@@ -129,6 +132,9 @@ impl LUSystem {
         )
     }
 
+    /// Populates the w vector with conditioning values and random numbers.
+    /// The conditioning values are the first n_cond values in the w vector.
+    /// The remaining values are filled with random numbers.
     #[inline(always)]
     fn populate_w_vec(&mut self, values: &[f32], rng: &mut StdRng) {
         //populate w vector with conditioning points
@@ -141,6 +147,9 @@ impl LUSystem {
         }
     }
 
+    /// Solve the kriging system to compute weights for each datum for each estimation node.
+    /// The weights are stored in the intermediate matrix.
+    /// Each row of the intermediate matrix corresponds to the weights for a single estimation node.
     #[inline(always)]
     pub(crate) fn compute_intermediate_mat(&mut self) {
         let (l_dd, _, l_gd, _) = self.l_mat.as_mut().split_at_mut(self.n_cond, self.n_cond);
@@ -158,6 +167,8 @@ impl LUSystem {
         self.intermediate_mat = l_gd_t.transpose_mut().to_owned();
     }
 
+    /// Set the dimensions of the LU system.
+    /// If the size of the system increases, new values are initialized to zero.
     #[inline(always)]
     fn set_dims(&mut self, num_cond: usize, num_sim: usize) {
         assert!(num_cond <= self.cond_size);
@@ -173,8 +184,9 @@ impl LUSystem {
             .resize_with(self.n_sim, self.n_cond, |_, _| 0.0);
     }
 
+    /// Build and solve the LU system for the given conditioning points, values, and simulation points.
     #[inline(always)]
-    pub fn build_system<V, VT, SKB>(
+    pub fn build_and_solve_system<V, VT, SKB>(
         &mut self,
         cond_points: &[SKB::Support],
         values: &[f32],
@@ -194,6 +206,7 @@ impl LUSystem {
         self.compute_intermediate_mat();
     }
 
+    /// Simulate the kriging system by sampling the distribution for each node.
     #[inline(always)]
     pub fn simulate(&self) -> Vec<f32> {
         let mut sim_mat = Mat::zeros(self.n_sim, 1);
@@ -229,6 +242,7 @@ impl LUSystem {
         vals
     }
 
+    /// Size the system appropriately and build the L matrix for the given conditioning and simulation points.
     #[inline(always)]
     pub fn set_dims_and_build_l_matrix<V, VT, SKB, MS>(
         &mut self,
@@ -249,32 +263,6 @@ impl LUSystem {
         // TODO: handle error
         let _ = self.build_l_matrix::<_, _, SKB>(cond_points, sim_points, vgram);
     }
-
-    // #[inline(always)]
-    // pub fn create_mini_system<V, VT, SKB, MS>(
-    //     &mut self,
-    //     cond_points: &[SKB::Support],
-    //     sim_points: &[SKB::Support],
-    //     vgram: &V,
-    // ) -> MS
-    // where
-    //     V: VariogramModel<VT>,
-    //     VT: SimdValue<Element = f32> + SimdRealField + Copy,
-    //     SKB: SKBuilder,
-    //     MS: SolvedLUSystem,
-    // {
-    //     //set dimensions of LU system
-    //     let n_cond = cond_points.len();
-    //     let n_sim = sim_points.len();
-    //     self.set_dims(n_cond, n_sim);
-
-    //     //build L matrix
-    //     // TODO: handle error
-    //     let _ = self.build_l_matrix::<_, _, SKB>(cond_points, sim_points, vgram);
-
-    //     //Create mini system
-    //     MS::from(self)
-    // }
 }
 
 impl Clone for LUSystem {

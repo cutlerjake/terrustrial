@@ -8,7 +8,7 @@ use faer::{
 use rand::{rngs::StdRng, Rng};
 use rand_distr::StandardNormal;
 
-use crate::decomposition::lu::LUSystem;
+use crate::systems::lu::LUSystem;
 
 use super::{SolvedLUSystem, SolvedSystemBuilder};
 
@@ -100,6 +100,7 @@ impl From<&mut LUSystem> for SolvedLUOKSystem {
         // full derivation can be found
         // Kriging in a Global Neighborhood: Direct Sequential Simulation with a Large Number of Conditioning Data (Davis and Grivet 1984)
         // slight modifications have been made to accomodate simultaneous estimation and/or simulation of multiple points
+        lu.compute_l_matrix();
         lu.compute_intermediate_mat();
 
         let ones = Mat::<f32>::from_fn(lu.n_cond, 1, |_, _| 1.0);

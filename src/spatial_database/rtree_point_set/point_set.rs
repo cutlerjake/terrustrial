@@ -9,8 +9,8 @@ use rstar::primitives::GeomWithData;
 use rstar::{RTree, AABB};
 use serde::{Deserialize, Serialize};
 
+use crate::estimators::ConditioningParams;
 use crate::geometry::ellipsoid::Ellipsoid;
-use crate::kriging::ConditioningParams;
 use crate::spatial_database::coordinate_system::octant;
 use crate::spatial_database::{ConditioningProvider, SpatialDataBase};
 use permutation::Permutation;
@@ -293,7 +293,10 @@ impl<'b> ConditioningDataCollector<'b> {
             return;
         }
 
-        let local_point = self.ellipsoid.coordinate_system.global_to_local(&point);
+        let local_point = self
+            .ellipsoid
+            .coordinate_system
+            .world_to_local_point(&point);
 
         //check if point in ellipsoid
         let h = self.ellipsoid.normalized_local_distance_sq(&local_point);

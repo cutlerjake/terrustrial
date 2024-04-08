@@ -8,6 +8,7 @@ use self::simple_kriging::SKBuilder;
 
 pub mod generalized_sequential_indicator_kriging;
 pub mod generalized_sequential_kriging;
+pub mod inverse_distance;
 pub mod simple_kriging;
 
 #[derive(Debug, Clone)]

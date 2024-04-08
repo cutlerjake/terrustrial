@@ -1,15 +1,18 @@
 use faer::{unzipped, zipped};
 
-use crate::decomposition::lu::LUSystem;
+use crate::systems::lu::LUSystem;
 
 use super::{SolvedLUSystem, SolvedSystemBuilder};
 
 #[derive(Clone)]
-pub struct SolvedNegativeWeightFilteredSystemBuilder<S>
-where
-    S: SolvedSystemBuilder,
-{
+pub struct SolvedNegativeWeightFilteredSystemBuilder<S> {
     system: S,
+}
+
+impl<S> SolvedNegativeWeightFilteredSystemBuilder<S> {
+    pub fn new(system: S) -> Self {
+        SolvedNegativeWeightFilteredSystemBuilder { system }
+    }
 }
 
 impl<S> SolvedSystemBuilder for SolvedNegativeWeightFilteredSystemBuilder<S>
@@ -18,6 +21,15 @@ where
 {
     type SolvedSystem = SolvedNegativeWeightFilteredSystem<S::SolvedSystem>;
 
+    /// Clayton V. Deutsch,
+    /// Correcting for negative weights in ordinary kriging,
+    /// Computers & Geosciences,
+    /// Volume 22, Issue 7,
+    /// 1996,
+    /// Pages 765-773,
+    /// ISSN 0098-3004,
+    /// https://doi.org/10.1016/0098-3004(96)00005-2.
+    /// (https://www.sciencedirect.com/science/article/pii/0098300496000052)
     fn build(&self, lu_system: &mut LUSystem) -> Self::SolvedSystem {
         // 1. Determine estimation node - data covariance values
         // 2. Compute weights
@@ -33,7 +45,7 @@ where
         let cov = lu_system.l_mat.clone();
 
         // 2. Compute weights (stored in intermediate_mat)
-        lu_system.compute_l_matrix();
+        // lu_system.compute_l_matrix();
 
         let mut sys = self.system.build(lu_system);
         // 3, 4. Compute average absolute magnitude of negative weights and covariances (for each estimation node)
