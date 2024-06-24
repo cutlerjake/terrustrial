@@ -163,22 +163,27 @@ mod test {
 
     #[test]
     fn cpu_vgram() {
-        let path = r"C:\Users\2jake\OneDrive\Desktop\foresight\testing_geostats_data\point_cloud\point_set_300_reduced.csv";
+        let path = r"C:\Users\2jake\OneDrive\Desktop\walker.csv";
         let mut reader = csv::Reader::from_path(path).expect("Unable to open file.");
 
         let mut coords = Vec::new();
         let mut values = Vec::new();
 
         for record in reader.deserialize() {
-            let (x, y, z, _dx, _dy, _dz, v): (f32, f32, f32, f32, f32, f32, f32) = record.unwrap();
-            coords.push(Point3::new(x, y, z));
-            values.push(v);
+            let (x, y, u, v): (f32, f32, f32, f32) = record.unwrap();
+            coords.push(Point3::new(x, y, 0.0));
+            values.push(u);
         }
-        println!("Values: {:?}", values);
+
+        for (point, val) in coords.iter().zip(values.iter()) {
+            println!("{:?} - {}", point, val);
+        }
+        println!("Values: {:?}", values.len());
         let mut ind = (0..coords.len()).collect::<Vec<_>>();
         let mut rng = thread_rng();
         let tags = (0..coords.len()).collect::<Vec<_>>();
-        for _ in 0..100 {
+        for i in 0..1 {
+            println!("Iteration: {}", i);
             ind.shuffle(&mut rng);
 
             let shuffled_coords = ind.iter().map(|&i| coords[i]).collect::<Vec<_>>();
@@ -194,12 +199,22 @@ mod test {
                 .map(|(lb, ub)| LagBounds::new(*lb, *ub))
                 .collect::<Vec<_>>();
 
-            let cpu_calc = CPUCalculator::new(point_set, lag_bounds, 10f32, 0.1f32, 10f32, 0.1f32);
+            let cpu_calc = CPUCalculator::new(
+                point_set,
+                lag_bounds,
+                5f32,
+                45.0f32.to_radians(),
+                5f32,
+                45.0f32.to_radians(),
+            );
 
             let vgrams = cpu_calc.calculate_for_orientations(&[quat]);
 
             for vgram in vgrams.iter() {
                 println!("{:?}", vgram.semivariance);
+            }
+            for vgram in vgrams.iter() {
+                println!("{:?}", vgram.counts);
             }
             println!("");
         }

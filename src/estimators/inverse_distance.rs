@@ -39,7 +39,7 @@ impl InverseDistance {
             .map_with(
                 (
                     conditioning_params,
-                    coordinate_system.clone(),
+                    coordinate_system,
                     search_ellipsoid.clone(),
                 ),
                 |(cond_params, cs, ellipsoid), (group, orientation)| {
