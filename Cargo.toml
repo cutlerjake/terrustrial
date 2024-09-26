@@ -12,23 +12,23 @@ incremental = true
 
 [features]
 default = ["simba", "simba/wide"]
-packed = ["simba", "simba/packed_simd"]
+portable_simd = ["simba", "simba/portable_simd"]
 
 [dependencies]
 # Linalg
-faer = "0.18.2"
-nalgebra = { version = "0.32.3", features = ["std", "serde-serialize"] }
+faer = "0.19.2"
+nalgebra = { version = "0.33.0", features = ["std", "serde-serialize"] }
 ndarray = "0.15.6"
 dyn-stack = "0.10.0"
 
 # Math
-parry3d = { version = "0.13.5", features = ["simd-stable"] }
-rstar = { version = "0.11.0", features = ["serde"] }
+parry3d = { version = "0.17.0", features = ["simd-stable"] }
+rstar = { version = "0.12.0", features = ["serde"] }
 rand = "0.8.5"
 rand_distr = "0.4.3"
 num-traits = "0.2.15"
 approx = "0.5.1"
-simba = { version = "0.8.1", optional = true }
+simba = { version = "0.9.0", optional = true }
 
 # Utils
 serde = { version = "1", features = ["derive"] }
@@ -38,10 +38,3 @@ permutation = "0.4.1"
 indicatif = { version = "0.17.5", features = ["rayon"] }
 rayon = "1.8.1"
 csv = "1.2.2"
-
-
-#Fails to build with rust 1.73 due to packed_simd_2 dependency
-#simply updates dependency to packed_simd 0.3.9
-#subscribed to merge request on github, remove when merged
-[patch.crates-io]
-simba = { git = "https://github.com/dimforge/simba.git", branch = "master" }

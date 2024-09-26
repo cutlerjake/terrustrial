@@ -1,10 +1,8 @@
 use crate::{spatial_database::SupportInterface, variography::model_variograms::VariogramModel};
 use dyn_stack::{GlobalPodBuffer, PodStack, ReborrowMut};
-use faer::{
-    modules::{cholesky, core::mul::inner_prod::inner_prod_with_conj},
-    MatRef, Parallelism,
-};
-use faer::{Conj, Mat};
+use faer::linalg::cholesky;
+use faer::Parallelism;
+use faer::{Col, ColRef, Conj, Mat};
 use nalgebra::{Point3, SimdRealField, SimdValue, Vector3};
 use num_traits::Float;
 use simba::simd::SimdPartialOrd;
@@ -22,7 +20,7 @@ pub trait SKBuilder {
         <Self as SKBuilder>::Support: 'a;
 
     fn build_cov_vec<'a, I, V, T>(
-        cov_vec: &mut Mat<f32>,
+        cov_vec: &mut Col<f32>,
         cond: I,
         kriging_point: &Point3<f32>,
         vgram: &V,
@@ -68,7 +66,7 @@ impl SKBuilder for SKPointSupportBuilder {
                 cnt += 1;
 
                 //if all lanes populated, compute covariogram and insert into matrix
-                if cnt >= T::lanes() {
+                if cnt >= T::LANES {
                     cnt = 0;
 
                     //compute covariance
@@ -78,7 +76,7 @@ impl SKBuilder for SKPointSupportBuilder {
                     'outer: for insert_i in last_insert_i..=i {
                         if insert_i == last_insert_i {
                             for insert_j in last_insert_j..=insert_i {
-                                if extract_ind == T::lanes() {
+                                if extract_ind == T::LANES {
                                     break 'outer;
                                 }
                                 cov_mat.write(insert_i, insert_j, cov.extract(extract_ind));
@@ -86,7 +84,7 @@ impl SKBuilder for SKPointSupportBuilder {
                             }
                         } else {
                             for insert_j in 0..=insert_i {
-                                if extract_ind == T::lanes() {
+                                if extract_ind == T::LANES {
                                     break 'outer;
                                 }
                                 cov_mat.write(insert_i, insert_j, cov.extract(extract_ind));
@@ -114,7 +112,7 @@ impl SKBuilder for SKPointSupportBuilder {
         'outer: for insert_i in last_insert_i..len {
             if insert_i == last_insert_i {
                 for insert_j in last_insert_j..=insert_i {
-                    if extract_ind == T::lanes() {
+                    if extract_ind == T::LANES {
                         break 'outer;
                     }
                     cov_mat.write(insert_i, insert_j, cov.extract(extract_ind));
@@ -122,7 +120,7 @@ impl SKBuilder for SKPointSupportBuilder {
                 }
             } else {
                 for insert_j in 0..=insert_i {
-                    if extract_ind == T::lanes() {
+                    if extract_ind == T::LANES {
                         break 'outer;
                     }
                     cov_mat.write(insert_i, insert_j, cov.extract(extract_ind));
@@ -133,7 +131,7 @@ impl SKBuilder for SKPointSupportBuilder {
     }
 
     fn build_cov_vec<'a, I, V, T>(
-        cov_vec: &mut Mat<f32>,
+        cov_vec: &mut Col<f32>,
         cond: I,
         kriging_point: &Point3<f32>,
         vgram: &V,
@@ -164,14 +162,14 @@ impl SKBuilder for SKPointSupportBuilder {
             cnt += 1;
 
             //if all lanes populated, compute covariogram and insert into matrix
-            if cnt >= T::lanes() {
+            if cnt >= T::LANES {
                 cnt = 0;
 
                 //compute covariance
                 let cov = vgram.covariogram(vec);
                 //insert covariance into matrix on current row
                 for (extract_ind, insert_i) in (last_insert_i..=i).enumerate() {
-                    cov_vec.write(insert_i, 0, cov.extract(extract_ind));
+                    cov_vec.write(insert_i, cov.extract(extract_ind));
                 }
 
                 //update last insert indices
@@ -184,7 +182,7 @@ impl SKBuilder for SKPointSupportBuilder {
 
         //insert covariance into matrix on current row
         for (extract_ind, insert_i) in (last_insert_i..len).enumerate() {
-            cov_vec.write(insert_i, 0, cov.extract(extract_ind));
+            cov_vec.write(insert_i, cov.extract(extract_ind));
         }
     }
 }
@@ -234,9 +232,9 @@ impl SKBuilder for SKVolumeSupportBuilder {
                         cnt += 1;
 
                         //if all lanes populated, compute covariogram and insert into matrix
-                        if cnt >= T::lanes() {
+                        if cnt >= T::LANES {
                             cnt = 0;
-                            n += T::lanes();
+                            n += T::LANES;
 
                             //update covariance
                             total_cov += vgram.covariogram(vec);
@@ -248,7 +246,7 @@ impl SKBuilder for SKVolumeSupportBuilder {
                 let mut remaining_cov = vgram.covariogram(vec);
                 n += cnt;
                 //set unused lanes to 0
-                for extract_ind in cnt..T::lanes() {
+                for extract_ind in cnt..T::LANES {
                     remaining_cov.replace(extract_ind, 0.0);
                 }
                 total_cov += remaining_cov;
@@ -262,7 +260,7 @@ impl SKBuilder for SKVolumeSupportBuilder {
 
     #[allow(unused_variables)]
     fn build_cov_vec<'a, I, V, T>(
-        cov_vec: &mut Mat<f32>,
+        cov_vec: &mut Col<f32>,
         cond: I,
         kriging_point: &Point3<f32>,
         vgram: &V,
@@ -278,9 +276,9 @@ impl SKBuilder for SKVolumeSupportBuilder {
 
 pub struct SimpleKrigingSystem {
     pub cond_cov_mat: Mat<f32>,
-    pub krig_point_cov_vec: Mat<f32>,
-    pub weights: Mat<f32>,
-    pub values: Mat<f32>,
+    pub krig_point_cov_vec: Col<f32>,
+    pub weights: Col<f32>,
+    pub values: Col<f32>,
     pub c_0: f32,
     pub cholesky_compute_mem: GlobalPodBuffer,
     pub cholesky_solve_mem: GlobalPodBuffer,
@@ -338,9 +336,9 @@ impl SimpleKrigingSystem
 
         Self {
             cond_cov_mat: Mat::zeros(n_elems, n_elems),
-            krig_point_cov_vec: Mat::zeros(n_elems, 1),
-            weights: Mat::zeros(n_elems, 1),
-            values: Mat::zeros(n_elems, 1),
+            krig_point_cov_vec: Col::zeros(n_elems),
+            weights: Col::zeros(n_elems),
+            values: Col::zeros(n_elems),
             c_0: 0.0,
             cholesky_compute_mem,
             cholesky_solve_mem,
@@ -357,9 +355,9 @@ impl SimpleKrigingSystem
     #[inline(always)]
     pub fn set_dim(&mut self, n_elems: usize) {
         unsafe { self.cond_cov_mat.set_dims(n_elems, n_elems) };
-        unsafe { self.krig_point_cov_vec.set_dims(n_elems, 1) };
-        unsafe { self.weights.set_dims(n_elems, 1) };
-        unsafe { self.values.set_dims(n_elems, 1) };
+        unsafe { self.krig_point_cov_vec.set_nrows(n_elems) };
+        unsafe { self.weights.set_nrows(n_elems) };
+        unsafe { self.values.set_nrows(n_elems) };
     }
 
     /// Compute SK weights
@@ -380,10 +378,10 @@ impl SimpleKrigingSystem
 
         //solve SK system
         cholesky::llt::solve::solve_with_conj(
-            self.weights.as_mut(),
+            self.weights.as_2d_mut(),
             self.cond_cov_mat.as_ref(),
             Conj::No,
-            self.krig_point_cov_vec.as_ref(),
+            self.krig_point_cov_vec.as_2d(),
             Parallelism::None,
             cholesky_solve_stack.rb_mut(),
         );
@@ -420,9 +418,9 @@ impl SimpleKrigingSystem
         );
 
         //store values
-        unsafe { self.values.set_dims(cond_values.len(), 1) };
+        unsafe { self.values.set_nrows(cond_values.len()) };
         for (i, &value) in cond_values.iter().enumerate() {
-            unsafe { self.values.write_unchecked(i, 0, value) };
+            unsafe { self.values.write_unchecked(i, value) };
         }
         self.c_0 = vgram.c_0();
 
@@ -433,23 +431,25 @@ impl SimpleKrigingSystem
     /// SK Estimate
     #[inline(always)]
     pub fn estimate(&self) -> f32 {
-        inner_prod_with_conj(
-            self.values.as_ref(),
-            Conj::No,
-            self.weights.as_ref(),
-            Conj::No,
-        )
+        self.values.transpose() * self.weights.as_ref()
+        // inner_prod_with_conj(
+        //     self.values.as_ref(),
+        //     Conj::No,
+        //     self.weights.as_ref(),
+        //     Conj::No,
+        // )
     }
     /// SK Variance
     #[inline(always)]
     pub fn variance(&self) -> f32 {
-        self.c_0
-            - inner_prod_with_conj(
-                self.weights.as_ref(),
-                Conj::No,
-                self.krig_point_cov_vec.as_ref(),
-                Conj::No,
-            )
+        self.c_0 - self.weights.transpose() * self.krig_point_cov_vec.as_ref()
+        // self.c_0
+        //     - inner_prod_with_conj(
+        //         self.weights.as_ref(),
+        //         Conj::No,
+        //         self.krig_point_cov_vec.as_ref(),
+        //         Conj::No,
+        //     )
     }
 
     /// Build the system for SK and compute the weights
@@ -496,13 +496,13 @@ impl SimpleKrigingSystem
 
 pub struct MiniSKSystem {
     c_0: f32,
-    weights: Mat<f32>,
-    cov_vec: Mat<f32>,
+    weights: Col<f32>,
+    cov_vec: Col<f32>,
 }
 
 impl MiniSKSystem {
     #[inline(always)]
-    pub fn new(c_0: f32, weights: Mat<f32>, cov_vec: Mat<f32>) -> Self {
+    pub fn new(c_0: f32, weights: Col<f32>, cov_vec: Col<f32>) -> Self {
         Self {
             c_0,
             weights,
@@ -511,19 +511,21 @@ impl MiniSKSystem {
     }
 
     #[inline(always)]
-    pub fn estimate(&self, values: MatRef<f32>) -> f32 {
-        inner_prod_with_conj(values, Conj::No, self.weights.as_ref(), Conj::No)
+    pub fn estimate(&self, values: ColRef<f32>) -> f32 {
+        values.transpose() * self.weights.as_ref()
+        // inner_prod_with_conj(values, Conj::No, self.weights.as_ref(), Conj::No)
     }
 
     #[inline(always)]
     pub fn variance(&self) -> f32 {
-        self.c_0
-            - inner_prod_with_conj(
-                self.weights.as_ref(),
-                Conj::No,
-                self.cov_vec.as_ref(),
-                Conj::No,
-            )
+        self.c_0 - self.weights.transpose() * self.cov_vec.as_ref()
+        // self.c_0
+        //     - inner_prod_with_conj(
+        //         self.weights.as_ref(),
+        //         Conj::No,
+        //         self.cov_vec.as_ref(),
+        //         Conj::No,
+        //     )
     }
 }
 

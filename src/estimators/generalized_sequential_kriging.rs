@@ -8,6 +8,7 @@ use crate::systems::lu::LUSystem;
 use crate::systems::solved_systems::SolvedLUSystem;
 use crate::systems::solved_systems::SolvedSystemBuilder;
 use crate::variography::model_variograms::VariogramModel;
+use indicatif::ParallelProgressIterator;
 use nalgebra::Point3;
 use nalgebra::UnitQuaternion;
 use rstar::primitives::GeomWithData;
@@ -59,6 +60,7 @@ impl GSK {
 
         (0..groups.n_groups())
             .into_par_iter()
+            .progress()
             .map(|group| (groups.get_group(group), groups.get_orientation(group)))
             .map_with(
                 (
@@ -428,9 +430,9 @@ mod test {
 
         // create search ellipsoid
         let search_ellipsoid = Ellipsoid::new(
-            10000f32,
-            10000f32,
-            10000f32,
+            100f32,
+            100f32,
+            100f32,
             CoordinateSystem::new(
                 Translation3::new(0.0, 0.0, 0.0),
                 UnitQuaternion::from_euler_angles(0.0, 0.0, 0f32.to_radians()),
@@ -481,8 +483,8 @@ mod test {
         let orientations = vec![UnitQuaternion::identity(); groups.len()];
         let node_provider = PointGroupProvider::from_groups(groups.clone(), orientations);
         let mut params = ConditioningParams::default();
-        params.max_n_cond = 64;
-        params.max_octant = 10000;
+        params.max_n_cond = 24;
+        params.max_octant = 2;
         let builder = SolvedLUOKSystemBuilder;
         let time1 = std::time::Instant::now();
         let values = gsk.estimate::<SKPointSupportBuilder, _, _, _>(

@@ -37,11 +37,7 @@ impl IKCPDF {
     pub fn correct(&mut self) {
         //clamp p within 0 and 1
         self.p.iter_mut().for_each(|x| {
-            if *x > 1.0 {
-                *x = 1.0;
-            } else if *x < 0.0 {
-                *x = 0.0;
-            }
+            *x = (*x).clamp(0.0, 1.0);
         });
 
         let mut curr_max = f32::MIN;
