@@ -62,7 +62,7 @@ impl LUSystem {
     /// The variogram model is used to compute the covariance between points.
     /// Note: only the lower triangle of the covariance matrix is required.
     #[inline(always)]
-    pub(crate) fn build_cov_matrix<V, T, SKB>(
+    pub fn build_cov_matrix<V, T, SKB>(
         &mut self,
         cond_points: &[SKB::Support],
         sim_points: &[SKB::Support],
@@ -86,7 +86,7 @@ impl LUSystem {
     /// The L matrix is stored in the lower triangle of the covariance matrix.
     /// The upper triangle of the covariance matrix is not used.
     #[inline(always)]
-    pub(crate) fn compute_l_matrix(&mut self) {
+    pub(crate) fn compute_l_matrix(&mut self) -> Result<LltInfo, faer::solvers::CholeskyError> {
         //create dynstacks
         let mut cholesky_compute_stack = PodStack::new(&mut self.buffer);
 
@@ -98,7 +98,6 @@ impl LUSystem {
             cholesky_compute_stack.rb_mut(),
             Default::default(),
         )
-        .unwrap();
     }
 
     /// Build and compute the L matrix for the system.

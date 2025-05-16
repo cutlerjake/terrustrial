@@ -8,24 +8,27 @@ use rstar::primitives::GeomWithData;
 use rstar::{RTree, AABB};
 use serde::{Deserialize, Serialize};
 
-use crate::spatial_database::{IterNearest, SpatialDataBase};
+use crate::spatial_database::{IterNearest, SpatialDataBase, SupportInterface};
 
 type Point = GeomWithData<[f32; 3], u32>;
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct PointSet<T> {
+pub struct SupportSet<S, T> {
     pub tree: RTree<Point>,
-    pub points: Vec<Point3<f32>>,
+    pub points: Vec<S>,
     pub data: Vec<T>,
     pub source_tag: Vec<usize>,
 }
 
-impl<T> PointSet<T> {
-    pub fn new(points: Vec<Point3<f32>>, data: Vec<T>, source_tag: Vec<usize>) -> Self {
+impl<S: SupportInterface, T> SupportSet<S, T> {
+    pub fn new(points: Vec<S>, data: Vec<T>, source_tag: Vec<usize>) -> Self {
         let tree_points = points
             .iter()
             .enumerate()
-            .map(|(i, p)| Point::new([p.x, p.y, p.z], i as u32))
+            .map(|(i, p)| {
+                let p = p.center();
+                Point::new([p.x, p.y, p.z], i as u32)
+            })
             .collect();
         let tree = RTree::bulk_load(tree_points);
 
@@ -38,92 +41,8 @@ impl<T> PointSet<T> {
     }
 }
 
-impl<T> PointSet<T>
-where
-    T: FromStr,
-    <T as FromStr>::Err: std::error::Error + 'static,
-{
-    pub fn from_csv_index(
-        csv_path: &str,
-        x_col: &str,
-        y_col: &str,
-        z_col: &str,
-        value_col: &str,
-    ) -> Result<Self, Box<dyn error::Error>> {
-        //storage for data
-        let mut point_vec = Vec::new();
-        let mut value_vec = Vec::new();
-
-        //read data from csv
-        let mut rdr = csv::Reader::from_path(csv_path)?;
-        for result in rdr.deserialize() {
-            let record: HashMap<String, String> = result?;
-
-            let x = record[x_col].parse::<f32>()?;
-            let y = record[y_col].parse::<f32>()?;
-            let z = record[z_col].parse::<f32>()?;
-            let value = record[value_col].parse::<T>()?;
-
-            point_vec.push(Point3::new(x, y, z));
-
-            value_vec.push(value);
-        }
-
-        //no source tag -> give all points a unique tag
-        let source_tag = (0..point_vec.len()).collect();
-
-        Ok(Self::new(point_vec, value_vec, source_tag))
-    }
-}
-
-impl<T> SpatialDataBase<T> for PointSet<T>
-where
-    T: Clone,
-{
-    type INDEX = usize;
-
-    fn inds_in_bounding_box(&self, bounding_box: &Aabb) -> Vec<Self::INDEX> {
-        let envelope = AABB::from_corners(
-            [
-                bounding_box.mins.x,
-                bounding_box.mins.y,
-                bounding_box.mins.z,
-            ],
-            [
-                bounding_box.maxs.x,
-                bounding_box.maxs.y,
-                bounding_box.maxs.z,
-            ],
-        );
-        self.tree
-            .locate_in_envelope(&envelope)
-            .map(|geom| geom.data as usize)
-            .collect()
-    }
-
-    fn point_at_ind(&self, inds: &Self::INDEX) -> Point3<f32> {
-        self.points[*inds]
-    }
-
-    fn data_at_ind(&self, ind: &Self::INDEX) -> Option<T> {
-        self.data.get(*ind).cloned()
-    }
-
-    fn data_and_points(&self) -> (Vec<T>, Vec<Point3<f32>>) {
-        (self.data.clone(), self.points.clone())
-    }
-
-    fn data_and_inds(&self) -> (Vec<T>, Vec<Self::INDEX>) {
-        (self.data.clone(), (0..self.data.len()).collect())
-    }
-
-    fn set_data_at_ind(&mut self, ind: &Self::INDEX, data: T) {
-        self.data[*ind] = data;
-    }
-}
-
-impl<T: Copy> IterNearest for PointSet<T> {
-    type Shape = Point3<f32>;
+impl<T: Copy, S: SupportInterface + Clone> IterNearest for SupportSet<S, T> {
+    type Shape = S;
 
     type Data = T;
 
@@ -134,15 +53,12 @@ impl<T: Copy> IterNearest for PointSet<T> {
     {
         self.tree
             .nearest_neighbor_iter_with_distance_2(&[location.x, location.y, location.z])
-            .map(|(point, dist)| {
-                let point3 = Point3::<f32>::new(point.geom()[0], point.geom()[1], point.geom()[2]);
-                crate::spatial_database::IterNearestElem {
-                    shape: point3,
-                    dist,
-                    data: self.data[point.data as usize],
-                    tag: self.source_tag[point.data as usize] as u32,
-                    idx: point.data,
-                }
+            .map(|(point, dist)| crate::spatial_database::IterNearestElem {
+                shape: self.points[point.data as usize].clone(),
+                dist,
+                data: self.data[point.data as usize],
+                tag: self.source_tag[point.data as usize] as u32,
+                idx: point.data,
             })
     }
 }
@@ -277,7 +193,7 @@ mod tests {
 
         let tags = (0..n_points).collect();
 
-        let point_set = PointSet::new(points.clone(), data, tags);
+        let point_set = SupportSet::new(points.clone(), data, tags);
         let query_point = Point3::new(500.0, 500.0, 500.0);
         let n_cond = 20;
 
@@ -339,7 +255,7 @@ mod tests {
 
         let data = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 10.0];
         let tags = (0..8).collect();
-        let point_set = PointSet::new(points, data, tags);
+        let point_set = SupportSet::new(points, data, tags);
         let query_point = Point3::new(7.0, 7.0, 7.0);
         let quat = nalgebra::UnitQuaternion::identity();
         let cs = CoordinateSystem::new(query_point.coords.into(), quat);
@@ -374,7 +290,7 @@ mod tests {
 
         let tags = (0..8).collect();
 
-        let point_set = PointSet::new(points, data, tags);
+        let point_set = SupportSet::new(points, data, tags);
 
         let query_point = Point3::new(0.0, 0.0, 0.0);
 
@@ -415,7 +331,7 @@ mod tests {
         let tags = (0..n_points).collect();
 
         println!("Building point set");
-        let point_set = PointSet::new(points.clone(), data, tags);
+        let point_set = SupportSet::new(points.clone(), data, tags);
         let mut rng = rand::thread_rng();
         println!("Starting speed test");
         let time = std::time::Instant::now();

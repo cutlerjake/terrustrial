@@ -181,6 +181,7 @@ mod tests {
         let ellipse = Ellipsoid::new(1f32, 2f32, 3f32, coordinate_system);
 
         let bbox = ellipse.bounding_box();
+        println!("{:?}", bbox);
 
         assert_relative_eq!(bbox.mins.x, 0f32, epsilon = 0.0001);
         assert_relative_eq!(bbox.mins.y, 0f32, epsilon = 0.0001);

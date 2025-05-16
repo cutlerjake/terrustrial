@@ -1,6 +1,6 @@
 use crate::estimators::generalized_sequential_kriging::GSK;
 use crate::node_providers::NodeProvider;
-use crate::spatial_database::{MapConditioningProvider, SupportTransform};
+use crate::spatial_database::{IterNearest, MappedIterNearest, SupportInterface, SupportTransform};
 use crate::systems::solved_systems::SolvedSystemBuilder;
 use crate::{
     geometry::ellipsoid::Ellipsoid, spatial_database::ConditioningProvider,
@@ -8,6 +8,7 @@ use crate::{
 };
 
 use itertools::izip;
+
 use simba::simd::SimdPartialOrd;
 use simba::simd::SimdRealField;
 use simba::simd::SimdValue;
@@ -17,6 +18,7 @@ use super::simple_kriging::SKBuilder;
 use crate::estimators::ConditioningParams;
 
 /// The cpdf associated with the indicator kriging estimates.
+///
 /// p[i] is the probability that the value is less than x[i].
 /// The raw pdf may not be valid, (negative kriging weights, poorly modeled variograms, lack of data, etc..).
 /// A correction method is provided, which uses a two-pass averaging method to ensure valid order relations.
@@ -87,23 +89,24 @@ impl GSIK {
     ) -> Vec<IKCPDF>
     where
         SKB: SKBuilder,
-        S::Shape: SupportTransform<SKB::Support>,
-        S: ConditioningProvider<Ellipsoid, f32, ConditioningParams> + Sync + std::marker::Send,
         V: VariogramModel<VT> + std::marker::Sync,
         VT: SimdPartialOrd + SimdRealField + SimdValue<Element = f32> + Copy,
+        S: ConditioningProvider<Ellipsoid, f32, ConditioningParams> + Send + Sync,
+        S: IterNearest<Shape: SupportTransform<SKB::Support> + SupportInterface, Data = f32>,
     {
         let mut cpdfs: Vec<IKCPDF> = Vec::new();
 
         for (i, theshold) in thresholds.iter().enumerate() {
             //create indicator conditioning provider
-            let cond = MapConditioningProvider::new(conditioning_data, |x| {
-                x.iter_mut().for_each(|x| {
-                    if *x <= *theshold {
-                        *x = 1.0;
-                    } else {
-                        *x = 0.0;
-                    }
-                });
+
+            let cond = MappedIterNearest::new(conditioning_data, |mut x| {
+                if x.data <= *theshold {
+                    x.data = 1.0;
+                } else {
+                    x.data = 0.0;
+                }
+
+                x
             });
 
             let gsk = GSK::new(self.system_params);

@@ -38,3 +38,10 @@ permutation = "0.4.1"
 indicatif = { version = "0.17.5", features = ["rayon"] }
 rayon = "1.8.1"
 csv = "1.2.2"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "ordinary_kriging"
+harness = false

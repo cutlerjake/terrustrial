@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 
 use faer::{
     linalg::matmul::{self, triangular::BlockStructure},
+    solvers::CholeskyError,
     Conj, Mat, MatMut, MatRef, Parallelism,
 };
 use rand::{rngs::StdRng, Rng};
@@ -16,9 +17,10 @@ pub struct SolvedLUSKSystemBuilder;
 
 impl SolvedSystemBuilder for SolvedLUSKSystemBuilder {
     type SolvedSystem = SolvedLUSKSystem;
+    type Error = CholeskyError;
 
-    fn build(&self, system: &mut LUSystem) -> Self::SolvedSystem {
-        SolvedLUSKSystem::from(system)
+    fn build(&self, system: &mut LUSystem) -> Result<Self::SolvedSystem, Self::Error> {
+        SolvedLUSKSystem::try_from(system)
     }
 }
 
@@ -122,9 +124,10 @@ impl SolvedLUSystem for SolvedLUSKSystem {
     }
 }
 
-impl From<&mut LUSystem> for SolvedLUSKSystem {
-    fn from(lu: &mut LUSystem) -> Self {
-        lu.compute_l_matrix();
+impl TryFrom<&mut LUSystem> for SolvedLUSKSystem {
+    type Error = CholeskyError;
+    fn try_from(lu: &mut LUSystem) -> Result<Self, Self::Error> {
+        lu.compute_l_matrix()?;
         lu.compute_intermediate_mat();
         let l_gg = lu
             .l_mat
@@ -136,12 +139,12 @@ impl From<&mut LUSystem> for SolvedLUSKSystem {
         let w = lu.w_vec.clone();
         let n_sim = lu.n_sim;
         let n_cond = lu.n_cond;
-        Self {
+        Ok(Self {
             n_sim,
             n_cond,
             l_gg,
             sk_weights: intermediate,
             w_vec: w,
-        }
+        })
     }
 }

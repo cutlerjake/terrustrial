@@ -16,6 +16,7 @@ pub trait ValueTransform<T> {
 }
 
 /// A builder for a solved system that applies a modifier to the values.
+///
 /// Forward transorms are applied to conditioining data before estimation and simulation.
 /// Backward transforms are applied to the estimated and simulated values.
 #[derive(Clone)]
@@ -36,16 +37,17 @@ where
     VT: ValueTransform<f32> + Clone + Send,
 {
     type SolvedSystem = ModifiedSolvedLUSystem<B::SolvedSystem, VT>;
+    type Error = B::Error;
 
-    fn build(&self, system: &mut LUSystem) -> Self::SolvedSystem {
+    fn build(&self, system: &mut LUSystem) -> Result<Self::SolvedSystem, Self::Error> {
         // Build the underlying system
         // Nothing more needs to happen here as the underlying kriging systems
         // depend only on the spatial configuration of the data, and not the values themselves.
-        let system = self.builder.build(system);
-        ModifiedSolvedLUSystem {
+        let system = self.builder.build(system)?;
+        Ok(ModifiedSolvedLUSystem {
             system,
             modifier: self.modifier.clone(),
-        }
+        })
     }
 }
 

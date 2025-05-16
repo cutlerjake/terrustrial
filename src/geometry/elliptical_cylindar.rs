@@ -1,6 +1,7 @@
 use nalgebra::{Point3, UnitQuaternion};
+use parry3d::bounding_volume::{Aabb, BoundingVolume};
 
-use crate::FORWARD;
+use crate::{FORWARD, RIGHT, UP};
 
 pub struct EllipticalCylindar {
     pub p1: Point3<f32>,
@@ -28,19 +29,28 @@ impl EllipticalCylindar {
     }
 
     pub fn loose_aabb(&self) -> parry3d::bounding_volume::Aabb {
-        let offset = f32::max(self.a, self.b);
-
-        let min = Point3::new(self.p1.x - offset, self.p1.y - offset, self.p1.z - offset);
-
         let cylinder_axis = self.orientation * FORWARD.into_inner() * self.length;
-
-        let max = Point3::new(
-            self.p1.x + cylinder_axis.x + offset,
-            self.p1.y + cylinder_axis.y + offset,
-            self.p1.z + cylinder_axis.z + offset,
+        let aabb1 = bounding_box_of_oriented_ellipse(self.p1, self.a, self.b, self.orientation);
+        let aabb2 = bounding_box_of_oriented_ellipse(
+            self.p1 + cylinder_axis,
+            self.a,
+            self.b,
+            self.orientation,
         );
 
-        parry3d::bounding_volume::Aabb::new(min, max)
+        aabb1.merged(&aabb2)
+
+        // let offset = f32::max(self.a, self.b);
+
+        // let min = Point3::new(self.p1.x - offset, self.p1.y - offset, self.p1.z - offset);
+
+        // let max = Point3::new(
+        //     self.p1.x + cylinder_axis.x + offset,
+        //     self.p1.y + cylinder_axis.y + offset,
+        //     self.p1.z + cylinder_axis.z + offset,
+        // );
+
+        // parry3d::bounding_volume::Aabb::new(min, max)
     }
 
     pub fn contains_point(&self, point: Point3<f32>) -> bool {
@@ -67,4 +77,19 @@ impl EllipticalCylindar {
 
         true
     }
+}
+
+// Function to compute the bounding box of an oriented ellipse in 3D space
+pub fn bounding_box_of_oriented_ellipse(
+    center: Point3<f32>,
+    major: f32,
+    semi_major: f32,
+    rotation: UnitQuaternion<f32>,
+) -> Aabb {
+    let u = rotation * RIGHT.scale(major);
+    let v = rotation * UP.scale(semi_major);
+
+    let half_extents = (u.component_mul(&u) + v.component_mul(&v)).map(|x| x.sqrt());
+
+    Aabb::from_half_extents(center, half_extents)
 }

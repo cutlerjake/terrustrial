@@ -11,7 +11,7 @@ impl IsoExponential {
         Self { range, sill }
     }
 
-    pub fn _variogram(self, h: f64) -> f64 {
+    pub fn variogram(self, h: f64) -> f64 {
         if h < self.range {
             return (self.sill) * (1.0 - (-h / self.range).exp());
         }
@@ -19,7 +19,16 @@ impl IsoExponential {
     }
 
     pub fn covariogram(self, h: f64) -> f64 {
-        self.sill - self._variogram(h)
+        self.sill - self.variogram(h)
+    }
+
+    pub fn param_cnt() -> usize {
+        2
+    }
+
+    pub fn update_from_slice(&mut self, params: &[f64]) {
+        self.range = params[0];
+        self.sill = params[1];
     }
 
     //derivative of variogram with respect to range
@@ -54,6 +63,6 @@ impl IsoVariogramModel<f64> for IsoExponential {
     }
 
     fn covariogram(&self, h: f64) -> f64 {
-        self.sill - self._variogram(h)
+        self.sill - self.variogram(h)
     }
 }

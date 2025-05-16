@@ -1,11 +1,11 @@
 use super::IsoVariogramModel;
 
 #[derive(Debug, Clone, Default, Copy)]
-pub struct Nugget {
+pub struct IsoNugget {
     pub nugget: f64,
 }
 
-impl Nugget {
+impl IsoNugget {
     pub fn new(nugget: f64) -> Self {
         Self { nugget }
     }
@@ -28,9 +28,17 @@ impl Nugget {
     pub fn parameter_names() -> Vec<&'static str> {
         vec!["nugget"]
     }
+
+    pub fn param_cnt() -> usize {
+        1
+    }
+
+    pub fn update_from_slice(&mut self, params: &[f64]) {
+        self.nugget = params[0];
+    }
 }
 
-impl IsoVariogramModel<f64> for Nugget {
+impl IsoVariogramModel<f64> for IsoNugget {
     fn c_0(&self) -> f64 {
         self.nugget
     }

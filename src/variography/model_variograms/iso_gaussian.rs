@@ -38,6 +38,15 @@ impl IsoGaussian {
     pub fn parameter_names() -> Vec<&'static str> {
         vec!["range"]
     }
+
+    pub fn param_cnt() -> usize {
+        2
+    }
+
+    pub fn update_from_slice(&mut self, params: &[f64]) {
+        self.range = params[0];
+        self.sill = params[1];
+    }
 }
 
 impl IsoVariogramModel<f64> for IsoGaussian {

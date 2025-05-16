@@ -3,6 +3,7 @@ use std::borrow::Borrow;
 use dyn_stack::{PodStack, ReborrowMut};
 use faer::{
     linalg::{cholesky, matmul},
+    solvers::CholeskyError,
     unzipped, zipped, Conj, Mat, MatMut, MatRef, Parallelism,
 };
 use rand::{rngs::StdRng, Rng};
@@ -17,9 +18,9 @@ pub struct SolvedLUOKSystemBuilder;
 
 impl SolvedSystemBuilder for SolvedLUOKSystemBuilder {
     type SolvedSystem = SolvedLUOKSystem;
-
-    fn build(&self, system: &mut LUSystem) -> Self::SolvedSystem {
-        SolvedLUOKSystem::from(system)
+    type Error = CholeskyError;
+    fn build(&self, system: &mut LUSystem) -> Result<Self::SolvedSystem, Self::Error> {
+        SolvedLUOKSystem::try_from(system)
     }
 }
 
@@ -82,7 +83,7 @@ impl SolvedLUSystem for SolvedLUOKSystem {
     }
 
     fn simulate(&self) -> Vec<f32> {
-        todo!()
+        unimplemented!("simulate not implemented for OK system")
     }
 
     fn weights(&self) -> MatRef<f32> {
@@ -94,13 +95,14 @@ impl SolvedLUSystem for SolvedLUOKSystem {
     }
 }
 
-impl From<&mut LUSystem> for SolvedLUOKSystem {
-    fn from(lu: &mut LUSystem) -> Self {
+impl TryFrom<&mut LUSystem> for SolvedLUOKSystem {
+    type Error = faer::solvers::CholeskyError;
+    fn try_from(lu: &mut LUSystem) -> Result<Self, Self::Error> {
         // Constructs OK weights from SK weights
         // full derivation can be found
         // Kriging in a Global Neighborhood: Direct Sequential Simulation with a Large Number of Conditioning Data (Davis and Grivet 1984)
         // slight modifications have been made to accomodate simultaneous estimation and/or simulation of multiple points
-        lu.compute_l_matrix();
+        lu.compute_l_matrix()?;
         lu.compute_intermediate_mat();
 
         let ones = Mat::<f32>::from_fn(lu.n_cond, 1, |_, _| 1.0);
@@ -159,12 +161,14 @@ impl From<&mut LUSystem> for SolvedLUOKSystem {
         let n_sim = lu.n_sim;
         let n_cond = lu.n_cond;
 
-        Self {
+        Ok(Self {
             n_sim,
             n_cond,
             l_gg,
             ok_weights: ok,
             w_vec: w,
-        }
+        })
     }
 }
+
+// impl TryFrom<&mut LUSystem> for SolvedLUOKSystem {}

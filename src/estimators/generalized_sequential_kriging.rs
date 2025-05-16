@@ -1,16 +1,21 @@
 use crate::geometry::ellipsoid::Ellipsoid;
 use crate::geometry::Geometry;
 use crate::node_providers::NodeProvider;
+use crate::spatial_database::rtree_point_set::point_set::PointSet;
+use crate::spatial_database::rtree_point_set::support_set::SupportSet;
 use crate::spatial_database::ConditioningProvider;
+use crate::spatial_database::FilteredIterNearest;
+use crate::spatial_database::IterNearest;
 use crate::spatial_database::SupportInterface;
 use crate::spatial_database::SupportTransform;
 use crate::systems::lu::LUSystem;
 use crate::systems::solved_systems::SolvedLUSystem;
 use crate::systems::solved_systems::SolvedSystemBuilder;
 use crate::variography::model_variograms::VariogramModel;
-use indicatif::ParallelProgressIterator;
 use nalgebra::Point3;
 use nalgebra::UnitQuaternion;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 use rstar::primitives::GeomWithData;
 use rstar::RTree;
 use rstar::RTreeObject;
@@ -48,20 +53,18 @@ impl GSK {
     ) -> Vec<f32>
     where
         SKB: SKBuilder,
-        S: ConditioningProvider<Ellipsoid, f32, ConditioningParams> + Sync + std::marker::Send,
         V: VariogramModel<VT> + std::marker::Sync,
         VT: SimdPartialOrd + SimdRealField + SimdValue<Element = f32> + Copy,
-        S::Shape: SupportTransform<SKB::Support>,
+        S: ConditioningProvider<Ellipsoid, f32, ConditioningParams> + Send + Sync,
+        <S as IterNearest>::Shape: SupportTransform<SKB::Support>,
     {
         let system = LUSystem::new(
             self.system_params.max_group_size,
             conditioning_params.max_n_cond,
         );
 
-        (0..groups.n_groups())
-            .into_par_iter()
-            .progress()
-            .map(|group| (groups.get_group(group), groups.get_orientation(group)))
+        groups
+            .groups_and_orientations()
             .map_with(
                 (
                     system.clone(),
@@ -81,12 +84,12 @@ impl GSK {
 
                     //orient ellipsoid
                     if conditioning_params.orient_search {
-                        ellipsoid.coordinate_system.set_rotation(*orientation);
+                        ellipsoid.coordinate_system.set_rotation(orientation);
                     }
 
                     //orient variogram
                     if conditioning_params.orient_variogram {
-                        vgram.set_orientation(UnitQuaternion::splat(*orientation));
+                        vgram.set_orientation(UnitQuaternion::splat(orientation));
                     }
 
                     //get nearest points and values
@@ -102,18 +105,161 @@ impl GSK {
 
                         //build kriging system for point
                         local_system.build_cov_matrix::<_, _, SKB>(&cond_points, group, vgram);
-                        let mut solved_system = local_solved_system.build(local_system);
-
-                        solved_system.populate_cond_values_est(cond_values.as_slice());
-
-                        solved_system.estimate()
-                    } else {
-                        vec![f32::NAN; group.len()]
+                        if let Ok(mut solved_system) = local_solved_system.build(local_system) {
+                            solved_system.populate_cond_values_est(cond_values.as_slice());
+                            return solved_system.estimate();
+                        }
                     }
+                    vec![f32::NAN; group.len()]
                 },
             )
             .flatten()
             .collect::<Vec<f32>>()
+    }
+
+    pub fn simulate<SKB, S, V, VT>(
+        &self,
+        conditioning_data: &S,
+        cond_conditioning_params: &ConditioningParams,
+        sim_conditioning_params: &ConditioningParams,
+        variogram_model: V,
+        search_ellipsoid: Ellipsoid,
+        groups: &mut (impl NodeProvider<Support = SKB::Support> + Sync),
+        solved_system: impl SolvedSystemBuilder,
+    ) -> Vec<f32>
+    where
+        SKB: SKBuilder,
+        V: VariogramModel<VT> + std::marker::Sync,
+        VT: SimdPartialOrd + SimdRealField + SimdValue<Element = f32> + Copy,
+        S: ConditioningProvider<Ellipsoid, f32, ConditioningParams> + Send + Sync,
+        <S as IterNearest>::Shape: SupportTransform<SKB::Support>,
+        <SKB as SKBuilder>::Support: Clone,
+    {
+        pub enum Action<T> {
+            Simulate(T),
+            Nullify(u32),
+        }
+
+        let system = LUSystem::new(
+            self.system_params.max_group_size,
+            cond_conditioning_params.max_n_cond + sim_conditioning_params.max_n_cond,
+        );
+
+        let mut rng = StdRng::from_entropy();
+        // 1. Randomize the order of the groups
+        groups.randomize(&mut rng);
+
+        // 2. Build a conditioning provider from the simulation locations.
+        let _data = vec![0.0f32; groups.n_nodes()];
+        let mut _tags = vec![];
+        let mut sim_step = 0;
+        let _points = (0..groups.n_groups())
+            .map(|i| {
+                let group = groups.get_group(i);
+                _tags.extend(std::iter::repeat(sim_step).take(group.len()));
+                sim_step += 1;
+                group
+            })
+            .flatten()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let sim_conditioning_data = SupportSet::new(_points, _data, _tags);
+
+        let actions = groups
+            .indexed_groups_and_orientations()
+            .map_with(
+                (
+                    system.clone(),
+                    solved_system.clone(),
+                    search_ellipsoid.clone(),
+                    variogram_model.clone(),
+                ),
+                |(local_system, local_solved_system, ellipsoid, vgram),
+                 (sim_idx, group, orientation)| {
+                    //get center of group
+                    let center = group.iter().fold(Point3::<f32>::origin(), |mut acc, x| {
+                        acc.coords += x.center().coords;
+                        acc
+                    }) / (group.len() as f32);
+
+                    //translate search ellipsoid to group center
+                    ellipsoid.translate_to(&center);
+
+                    //orient ellipsoid
+                    if cond_conditioning_params.orient_search {
+                        ellipsoid.coordinate_system.set_rotation(orientation);
+                    }
+
+                    //orient variogram
+                    if cond_conditioning_params.orient_variogram {
+                        vgram.set_orientation(UnitQuaternion::splat(orientation));
+                    }
+
+                    //get nearest points and values
+                    let (_, cond_values, cond_points, sufficiently_conditioned) =
+                        conditioning_data.query(&center, ellipsoid, cond_conditioning_params);
+
+                    // Create a query that only fetches previously simulated nodes.
+                    let filtered_sim_conditioning_data =
+                        FilteredIterNearest::new(&sim_conditioning_data, |x| {
+                            // Only fetch nodes that are not already simulated.
+                            x.tag < sim_idx as u32
+                        });
+
+                    let (sim_cond_idx, _, sim_cond_points, _sufficiently_conditioned) =
+                        filtered_sim_conditioning_data.query(
+                            &center,
+                            ellipsoid,
+                            cond_conditioning_params,
+                        );
+
+                    if sufficiently_conditioned {
+                        //convert points to support
+                        let mut cond_points = cond_points
+                            .into_iter()
+                            .map(|x| x.transform())
+                            .collect::<Vec<_>>();
+
+                        cond_points.extend(sim_cond_points.into_iter().map(|x| x.transform()));
+
+                        //build kriging system for point
+                        local_system.build_cov_matrix::<_, _, SKB>(&cond_points, group, vgram);
+                        if let Ok(solved_system) = local_solved_system.build(local_system) {
+                            return Action::Simulate((solved_system, sim_cond_idx, cond_values));
+                        }
+                    }
+                    Action::Nullify(group.len() as u32)
+                },
+            )
+            .collect::<Vec<_>>();
+
+        let mut simulated_values = vec![f32::NAN; groups.n_nodes()];
+
+        let mut cnt = 0;
+
+        for action in actions {
+            match action {
+                Action::Simulate((mut solved_system, sim_cond_idx, mut cond_values)) => {
+                    // Populate the conditioning values for the simulation.
+
+                    cond_values.extend(sim_cond_idx.iter().map(|x| simulated_values[*x as usize]));
+                    solved_system.populate_cond_values_sim(cond_values.as_slice(), &mut rng);
+                    let simulated = solved_system.simulate();
+                    let n_simulated = simulated.len();
+                    // Populate the simulated values in the group.
+                    for (i, value) in simulated.into_iter().enumerate() {
+                        simulated_values[i + cnt] = value;
+                    }
+                    cnt += n_simulated;
+                }
+                Action::Nullify(size) => {
+                    cnt += size as usize;
+                }
+            }
+        }
+
+        simulated_values
     }
 }
 

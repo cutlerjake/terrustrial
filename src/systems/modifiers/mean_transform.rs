@@ -3,6 +3,7 @@ use std::ops::{Add, Sub};
 use super::ValueTransform;
 
 /// Value transform that subtracts a mean from the conditioning data before estimation and simulation.
+///
 /// The mean is added back to the estimated and simulated values.
 /// This is required for SimpleKriging as the implementation assumes a zero mean.
 #[derive(Clone)]

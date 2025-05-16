@@ -29,15 +29,27 @@ impl IsoSpherical {
         self.sill * (1.5 * h * h * h / (r * r * r * r) - 1.5 * h / (r * r))
     }
 
-    //derivative of variogram with respect to sill
-    //pub fn variogram_ds(&self, h: f32) -> f32 {
-    //let r = self.range;
+    // derivative of variogram with respect to sill
+    pub fn variogram_ds(&self, h: f32) -> f32 {
+        let r = self.range as f32;
+        if h <= r {
+            return 1.5 * h / r - 0.5 * (h / r).powi(3);
+        }
 
-    //1.5 * h / (r) - 0.5 * h * h * h / (r * r * r)
-    //}
+        0.0
+    }
 
     pub fn parameter_names() -> Vec<&'static str> {
         vec!["range"]
+    }
+
+    pub fn param_cnt() -> usize {
+        2
+    }
+
+    pub fn update_from_slice(&mut self, params: &[f64]) {
+        self.range = params[0];
+        self.sill = params[1];
     }
 }
 

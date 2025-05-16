@@ -10,8 +10,9 @@ pub mod ok_system;
 pub mod sk_system;
 
 pub trait SolvedSystemBuilder: Clone + Send {
-    type SolvedSystem: SolvedLUSystem;
-    fn build(&self, system: &mut LUSystem) -> Self::SolvedSystem;
+    type SolvedSystem: SolvedLUSystem + Send;
+    type Error;
+    fn build(&self, system: &mut LUSystem) -> Result<Self::SolvedSystem, Self::Error>;
 }
 
 pub trait SolvedLUSystem: Clone {

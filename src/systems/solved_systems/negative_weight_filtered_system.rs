@@ -20,6 +20,7 @@ where
     S: SolvedSystemBuilder,
 {
     type SolvedSystem = SolvedNegativeWeightFilteredSystem<S::SolvedSystem>;
+    type Error = S::Error;
 
     /// Clayton V. Deutsch,
     /// Correcting for negative weights in ordinary kriging,
@@ -30,7 +31,7 @@ where
     /// ISSN 0098-3004,
     /// https://doi.org/10.1016/0098-3004(96)00005-2.
     /// (https://www.sciencedirect.com/science/article/pii/0098300496000052)
-    fn build(&self, lu_system: &mut LUSystem) -> Self::SolvedSystem {
+    fn build(&self, lu_system: &mut LUSystem) -> Result<Self::SolvedSystem, Self::Error> {
         // 1. Determine estimation node - data covariance values
         // 2. Compute weights
         // 3. Compute average absolute magnitude of negative weights
@@ -47,7 +48,7 @@ where
         // 2. Compute weights (stored in intermediate_mat)
         // lu_system.compute_l_matrix();
 
-        let mut sys = self.system.build(lu_system);
+        let mut sys = self.system.build(lu_system)?;
         // 3, 4. Compute average absolute magnitude of negative weights and covariances (for each estimation node)
         let (avg_abs_neg_weights, avg_neg_cov): (Vec<_>, Vec<_>) = (0..lu_system.n_sim)
             .map(|i| {
@@ -96,7 +97,7 @@ where
             });
         });
 
-        SolvedNegativeWeightFilteredSystem { system: sys }
+        Ok(SolvedNegativeWeightFilteredSystem { system: sys })
     }
 }
 

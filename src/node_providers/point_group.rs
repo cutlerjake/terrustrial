@@ -1,25 +1,21 @@
 use nalgebra::{Point3, UnitQuaternion};
+use rand::seq::SliceRandom;
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
-use super::NodeProvider;
+use super::{GroupRange, NodeProvider};
 
 /// A node provider for groups of points.
 /// Suitable for point-point kriging. (conditioning and estimation/simulation nodes are points)
 pub struct PointGroupProvider {
     points: Vec<Point3<f32>>,
     orientations: Vec<UnitQuaternion<f32>>,
-    group_inds: Vec<usize>,
+    group_inds: Vec<GroupRange>,
 }
 
 impl PointGroupProvider {
     pub fn get_group(&self, group: usize) -> &[Point3<f32>] {
-        let start = self.group_inds[group];
-        let end = if group == self.group_inds.len() - 1 {
-            self.points.len()
-        } else {
-            self.group_inds[group + 1]
-        };
-
-        &self.points[start..end]
+        let GroupRange { start, end } = self.group_inds[group];
+        &self.points[start as usize..end as usize]
     }
 
     pub fn from_groups(
@@ -30,9 +26,10 @@ impl PointGroupProvider {
         let mut group_inds = Vec::new();
 
         for group in groups {
-            let start = points.len();
+            let start = points.len() as u32;
+            let end = start + group.len() as u32;
+            group_inds.push(GroupRange { start, end });
             points.extend(group);
-            group_inds.push(start);
         }
 
         Self {
@@ -45,6 +42,11 @@ impl PointGroupProvider {
 
 impl NodeProvider for PointGroupProvider {
     type Support = Point3<f32>;
+
+    #[inline(always)]
+    fn n_nodes(&self) -> usize {
+        self.points.len()
+    }
 
     #[inline(always)]
     fn n_groups(&self) -> usize {
@@ -61,13 +63,31 @@ impl NodeProvider for PointGroupProvider {
         &self.orientations[group]
     }
 
-    // fn groups_and_orientations(
-    //     &self,
-    // ) -> impl ParallelIterator<Item = (&[Self::Support], UnitQuaternion<f32>)> {
-    //     (0..self.group_inds.len())
-    //         .into_par_iter()
-    //         .map(|group| (self.get_group(group), self.orientations[group]))
-    // }
+    fn groups_and_orientations(
+        &self,
+    ) -> impl ParallelIterator<Item = (&[Self::Support], UnitQuaternion<f32>)> {
+        (0..self.group_inds.len())
+            .into_par_iter()
+            .map(|group| (self.get_group(group), self.orientations[group]))
+    }
+
+    fn indexed_groups_and_orientations(
+        &self,
+    ) -> impl ParallelIterator<Item = (usize, &[Self::Support], UnitQuaternion<f32>)> {
+        (0..self.group_inds.len())
+            .into_par_iter()
+            .enumerate()
+            .map(|(idx, group)| (idx, self.get_group(group), self.orientations[group]))
+    }
+
+    fn randomize(&mut self, rng: &mut impl rand::Rng) {
+        self.group_inds.shuffle(rng);
+    }
+
+    #[inline(always)]
+    fn get_group_range(&self, group: usize) -> GroupRange {
+        self.group_inds[group]
+    }
 }
 
 #[cfg(test)]
