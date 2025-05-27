@@ -8,10 +8,10 @@ pub mod systems;
 pub mod variography;
 
 pub mod prelude {
-    pub mod re_export {
-        pub use nalgebra;
-        pub use parry3d_f64;
-        pub use simba;
+
+    pub mod re_exports {
+        pub use rstar;
+        pub use ultraviolet;
     }
 
     pub use crate::group_operators::{

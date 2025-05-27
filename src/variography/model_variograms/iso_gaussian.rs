@@ -49,7 +49,7 @@ impl IsoGaussian {
     }
 }
 
-impl IsoVariogramModel<f64> for IsoGaussian {
+impl IsoVariogramModel for IsoGaussian {
     fn c_0(&self) -> f64 {
         self.sill
     }

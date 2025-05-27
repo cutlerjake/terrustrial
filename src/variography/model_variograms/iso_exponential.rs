@@ -30,27 +30,9 @@ impl IsoExponential {
         self.range = params[0];
         self.sill = params[1];
     }
-
-    //derivative of variogram with respect to range
-    // pub fn variogram_dr(self, h: f64) -> f64 {
-    //     let r = self.range;
-
-    //     (self.sill) * (h * (-h / r).exp()) / (r * r)
-    // }
-
-    // //derivative of variogram with respect to sill
-    // pub fn variogram_ds(self, h: f32) -> f32 {
-    //     let r = self.range;
-
-    //     -(h * self.sill * (-h / r).exp()) / (r * r)
-    // }
-
-    // pub fn parameter_names() -> Vec<&'static str> {
-    //     vec!["range", "sill"]
-    // }
 }
 
-impl IsoVariogramModel<f64> for IsoExponential {
+impl IsoVariogramModel for IsoExponential {
     fn c_0(&self) -> f64 {
         self.sill
     }

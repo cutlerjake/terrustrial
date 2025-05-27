@@ -38,7 +38,7 @@ impl IsoNugget {
     }
 }
 
-impl IsoVariogramModel<f64> for IsoNugget {
+impl IsoVariogramModel for IsoNugget {
     fn c_0(&self) -> f64 {
         self.nugget
     }

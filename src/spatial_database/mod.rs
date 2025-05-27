@@ -1,7 +1,6 @@
-use std::{collections::HashMap, error, fmt::Debug, str::FromStr};
+use std::{collections::HashMap, error, str::FromStr};
 
 use coordinate_system::octant;
-use nalgebra::{Point3, SimdRealField, SimdValue, UnitQuaternion, Vector3};
 use ordered_float::OrderedFloat;
 use permutation::Permutation;
 use rstar::{PointDistance, RTree, RTreeObject, AABB};
@@ -14,7 +13,6 @@ use crate::{
 
 pub mod coordinate_system;
 pub mod group_provider;
-pub mod normalized;
 pub mod zero_mean;
 
 #[derive(Copy, Clone)]
@@ -157,35 +155,6 @@ impl<T: Copy> IterNearest for SpatialAcceleratedDB<T> {
             tag: 0,
             idx: elem.idx,
         })
-    }
-}
-
-pub trait SupportInterface {
-    fn center(&self) -> Point3<f64>;
-}
-
-pub trait SupportTransform<T>: SupportInterface {
-    fn transform(self) -> T;
-}
-
-impl<T> SupportTransform<T> for T
-where
-    T: SupportInterface,
-{
-    fn transform(self) -> Self {
-        self
-    }
-}
-
-impl SupportInterface for Point3<f64> {
-    fn center(&self) -> Point3<f64> {
-        *self
-    }
-}
-
-impl SupportTransform<Vec<Point3<f64>>> for Point3<f64> {
-    fn transform(self) -> Vec<Point3<f64>> {
-        vec![self]
     }
 }
 
@@ -654,85 +623,6 @@ where
     }
 }
 
-pub trait SpatialDataBase<T> {
-    type INDEX: Debug;
-    fn inds_in_bounding_box(
-        &self,
-        bounding_box: &parry3d_f64::bounding_volume::Aabb,
-    ) -> Vec<Self::INDEX>;
-    fn point_at_ind(&self, inds: &Self::INDEX) -> Point3<f64>;
-    fn data_at_ind(&self, ind: &Self::INDEX) -> Option<T>;
-    fn data_and_points(&self) -> (Vec<T>, Vec<Point3<f64>>);
-    fn data_and_inds(&self) -> (Vec<T>, Vec<Self::INDEX>);
-    fn set_data_at_ind(&mut self, ind: &Self::INDEX, data: T);
-}
-
-pub enum RoationType {
-    Extrinsic,
-    Intrinsic,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RotationAxis {
-    X,
-    Y,
-    Z,
-}
-
-impl RotationAxis {
-    pub fn from_char(c: char) -> Self {
-        match c {
-            'x' => Self::X,
-            'y' => Self::Y,
-            'z' => Self::Z,
-            _ => panic!("Invalid rotation axis"),
-        }
-    }
-
-    pub fn as_char(&self) -> char {
-        match self {
-            Self::X => 'x',
-            Self::Y => 'y',
-            Self::Z => 'z',
-        }
-    }
-}
-
-pub trait FromAxisAngles
-where
-    Self: Sized,
-{
-    fn from_axis_angles(rotations: &[(RotationAxis, f32)]) -> Self;
-}
-
-impl<T> FromAxisAngles for UnitQuaternion<T>
-where
-    T: SimdValue<Element = f32> + SimdRealField + Copy,
-{
-    fn from_axis_angles(rotations: &[(RotationAxis, f32)]) -> Self {
-        rotations
-            .iter()
-            .map(|(axis, ang)| match axis {
-                RotationAxis::X => {
-                    let axis = Vector3::x_axis();
-                    let angle = T::splat(*ang);
-                    UnitQuaternion::from_axis_angle(&axis, angle)
-                }
-                RotationAxis::Y => {
-                    let axis = Vector3::y_axis();
-                    let angle = T::splat(*ang);
-                    UnitQuaternion::from_axis_angle(&axis, angle)
-                }
-                RotationAxis::Z => {
-                    let axis = Vector3::z_axis();
-                    let angle = T::splat(*ang);
-                    UnitQuaternion::from_axis_angle(&axis, angle)
-                }
-            })
-            .fold(UnitQuaternion::identity(), |acc, x| acc * x)
-    }
-}
-
 pub trait DiscretiveVolume {
     fn discretize(&self, dx: f64, dy: f64, dz: f64) -> Vec<DVec3>;
 }
@@ -767,29 +657,5 @@ impl DiscretiveVolume for Aabb {
         }
 
         points
-    }
-}
-
-#[cfg(test)]
-mod test {
-
-    use num_traits::real::Real;
-
-    use super::*;
-
-    #[test]
-    fn zyz() {
-        let rotations = vec![
-            (RotationAxis::Z, 10.0.to_radians()),
-            (RotationAxis::Y, -20.0.to_radians()),
-            (RotationAxis::Z, 30.0.to_radians()),
-        ];
-
-        let quat = UnitQuaternion::<f32>::from_axis_angles(rotations.as_slice());
-
-        let vec = Vector3::x_axis();
-
-        let vec = quat.transform_vector(&vec);
-        println!("{:?}", vec);
     }
 }

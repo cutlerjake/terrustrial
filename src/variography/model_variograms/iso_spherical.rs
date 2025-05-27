@@ -53,7 +53,7 @@ impl IsoSpherical {
     }
 }
 
-impl IsoVariogramModel<f64> for IsoSpherical {
+impl IsoVariogramModel for IsoSpherical {
     fn c_0(&self) -> f64 {
         self.sill
     }
