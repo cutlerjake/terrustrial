@@ -177,11 +177,11 @@ impl VariogramTolerance {
 
         let a_mask = axial_dist.cmp_ge(self.a_dist_threshold);
         let a = (f64x4::splat(self.a) & a_mask)
-            | (axial_dist * f64x4::splat(self.a_tol.tan()) & !a_mask);
+            | (axial_dist * f64x4::splat(self.a_tol.tan())) & !a_mask;
 
         let b_mask = axial_dist.cmp_ge(self.b_dist_threshold);
         let b = (f64x4::splat(self.b) & b_mask)
-            | (axial_dist * f64x4::splat(self.b_tol.tan()) & !b_mask);
+            | (axial_dist * f64x4::splat(self.b_tol.tan())) & !b_mask;
 
         let x = cylinder_aligned_point.x / a;
         let z = cylinder_aligned_point.z / b;

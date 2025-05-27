@@ -114,7 +114,7 @@ impl GroupProvider {
 
     #[inline(always)]
     pub fn n_groups(&self) -> usize {
-        self.group_idxs.len().checked_sub(1).unwrap_or(0)
+        self.group_idxs.len().saturating_sub(1)
     }
 
     #[inline(always)]

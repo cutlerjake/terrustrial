@@ -366,7 +366,7 @@ impl<'b, T> ConditioningDataCollector<'b, T> {
         if let Some((_ind, max_dist)) = self.max_octant_dist(octant as usize) {
             if h < max_dist && self.can_swap_insert(octant as usize, _ind, tag) {
                 self.remove_shape(octant as usize, _ind);
-                self.insert_shape(octant as usize, shape, value, h, ind as u32, tag);
+                self.insert_shape(octant as usize, shape, value, h, ind, tag);
                 return;
             }
 
@@ -552,7 +552,7 @@ where
             idx,
         } in self.iter_nearest(point)
         {
-            cond_points.try_insert_shape(shape, data, sq_dist, idx, tag as u32);
+            cond_points.try_insert_shape(shape, data, sq_dist, idx, tag);
             if cond_points.stop {
                 break;
             }
@@ -758,39 +758,6 @@ impl DiscretiveVolume for Aabb {
             while y <= self.maxs().y {
                 let mut z = self.mins().z + step_z / 2.0;
                 while z <= self.maxs().z {
-                    points.push(DVec3::new(x, y, z));
-                    z += step_z;
-                }
-                y += step_y;
-            }
-            x += step_x;
-        }
-
-        points
-    }
-}
-
-impl DiscretiveVolume for parry3d_f64::bounding_volume::Aabb {
-    fn discretize(&self, dx: f64, dy: f64, dz: f64) -> Vec<DVec3> {
-        //ceil gaurantees that the resulting discretization will have dimensions upperbounded by dx, dy, dz
-        let nx = ((self.maxs.x as f64 - self.mins.x as f64) / dx).ceil() as usize;
-        let ny = ((self.maxs.y as f64 - self.mins.y as f64) / dy).ceil() as usize;
-        let nz = ((self.maxs.z as f64 - self.mins.z as f64) / dz).ceil() as usize;
-
-        //step size in each direction
-        let step_x = (self.maxs.x as f64 - self.mins.x as f64) / (nx as f64);
-        let step_y = (self.maxs.y as f64 - self.mins.y as f64) / (ny as f64);
-        let step_z = (self.maxs.z as f64 - self.mins.z as f64) / (nz as f64);
-
-        //contains the discretized points
-        let mut points = Vec::new();
-
-        let mut x = self.mins.x as f64 + step_x / 2.0;
-        while x <= self.maxs.x as f64 {
-            let mut y = self.mins.y as f64 + step_y / 2.0;
-            while y <= self.maxs.y as f64 {
-                let mut z = self.mins.z as f64 + step_z / 2.0;
-                while z <= self.maxs.z as f64 {
                     points.push(DVec3::new(x, y, z));
                     z += step_z;
                 }

@@ -52,17 +52,17 @@ pub fn estimate(
 
                 //get nearest points and values
                 let (_, cond_values, mut supports, sufficiently_conditioned) =
-                    conditioning_data.query(&center, &ellipsoid, conditioning_params);
+                    conditioning_data.query(&center, ellipsoid, conditioning_params);
                 let n_cond = supports.len();
 
                 if sufficiently_conditioned {
                     //build kriging system for point
-                    supports.extend_from_slice(&group);
+                    supports.extend_from_slice(group);
                     local_system.build_cov_matrix(
                         n_cond,
                         group.len(),
                         &supports,
-                        &vgram,
+                        vgram,
                         h_buffer,
                         pt_buffer,
                         var_buffer,
@@ -130,7 +130,7 @@ pub fn simulate(
 
             //get nearest points and values
             let (_, _cond_values, _supports, sufficiently_conditioned) =
-                conditioning_data.query(&center, &ellipsoid, data_conditioning_params);
+                conditioning_data.query(&center, ellipsoid, data_conditioning_params);
 
             sufficiently_conditioned
         })
@@ -182,7 +182,7 @@ pub fn simulate(
 
                 // Get the hard-data conditioning.
                 let (_, cond_values, mut supports, sufficiently_conditioned) =
-                    conditioning_data.query(&center, &ellipsoid, data_conditioning_params);
+                    conditioning_data.query(&center, ellipsoid, data_conditioning_params);
 
                 // Get the conditioning of previously simulated supports.
                 let sim_query = FilterMappedIterNearest::new(&sim_location_db, |elem| {
@@ -198,19 +198,19 @@ pub fn simulate(
                 });
 
                 let (sim_cond_inds, _, sim_supports, _) =
-                    sim_query.query(&center, &ellipsoid, sim_conditioning_params);
+                    sim_query.query(&center, ellipsoid, sim_conditioning_params);
 
                 supports.extend_from_slice(&sim_supports);
                 let n_cond = supports.len();
 
                 if sufficiently_conditioned {
                     //build kriging system for group
-                    supports.extend_from_slice(&group);
+                    supports.extend_from_slice(group);
                     local_system.build_cov_matrix(
                         n_cond,
                         group.len(),
                         &supports,
-                        &vgram,
+                        vgram,
                         h_buffer,
                         pt_buffer,
                         var_buffer,

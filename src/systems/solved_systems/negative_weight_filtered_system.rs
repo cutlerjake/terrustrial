@@ -90,7 +90,7 @@ where
             });
 
             let node_weights = lu_system.intermediate_mat.as_mut().row_mut(i);
-            zip!(node_weights).for_each(|unzip!(w)| *w = *w / weight);
+            zip!(node_weights).for_each(|unzip!(w)| *w /= weight);
         });
 
         Ok(SolvedNegativeWeightFilteredSystem { system: sys })

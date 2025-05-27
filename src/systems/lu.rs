@@ -64,6 +64,7 @@ impl LUSystem {
     /// The covariance matrix is built from the conditioning and simulation points according to the structure of the SKBuilder.
     /// The variogram model is used to compute the covariance between points.
     /// Note: only the lower triangle of the covariance matrix is required.
+    #[allow(clippy::too_many_arguments)]
     #[inline(always)]
     pub fn build_cov_matrix(
         &mut self,
@@ -180,6 +181,7 @@ impl LUSystem {
     }
 
     /// Build and solve the LU system for the given conditioning points, values, and simulation points.
+    #[allow(clippy::too_many_arguments)]
     #[inline(always)]
     pub fn build_and_solve_system(
         &mut self,
@@ -235,6 +237,7 @@ impl LUSystem {
     }
 
     /// Size the system appropriately and build the L matrix for the given conditioning and simulation points.
+    #[allow(clippy::too_many_arguments)]
     #[inline(always)]
     pub fn set_dims_and_build_l_matrix(
         &mut self,

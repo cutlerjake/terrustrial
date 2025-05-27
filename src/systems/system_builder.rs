@@ -74,6 +74,7 @@ impl SKGeneralBuilder {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn build_cov_vec(
         cov_vec: &mut Col<f64>,
         cond: &[Support],
@@ -120,17 +121,14 @@ impl SKGeneralBuilder {
         }
 
         // 3. Populate lower traingular elements
-        let mut cnt = 0;
         for i in 0..cond.len() {
-            let low_idx = ind_buffer[cnt];
-            let high_idx = ind_buffer[cnt + 1];
+            let low_idx = ind_buffer[i];
+            let high_idx = ind_buffer[i + 1];
             let vars = &var_buffer[low_idx..high_idx];
 
             let avg_var = vars.iter().copied().sum::<f64>() / vars.len() as f64;
 
             *cov_vec.get_mut(i) = avg_var;
-
-            cnt += 1;
         }
     }
 }
