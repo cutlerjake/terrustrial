@@ -1,25 +1,30 @@
-use crate::estimators::simple_kriging::SKBuilder;
-use crate::variography::model_variograms::VariogramModel;
-use dyn_stack::{GlobalPodBuffer, PodStack, ReborrowMut};
+use crate::geometry::support::Support;
+use crate::variography::model_variograms::composite::CompositeVariogram;
+use dyn_stack::{MemBuffer, MemStack};
 
 use faer::{
     linalg::{
+        cholesky::{
+            self,
+            llt::factor::{LltInfo, LltRegularization},
+        },
         matmul::{self},
+        solvers::LltError,
         triangular_solve::solve_upper_triangular_in_place,
     },
-    modules::cholesky::{self, llt::compute::LltInfo},
-    solvers::CholeskyError,
-    Conj, Mat, Parallelism,
+    Accum, Mat, Par, Spec,
 };
-use nalgebra::{SimdRealField, SimdValue};
 use rand::{rngs::StdRng, Rng};
 use rand_distr::StandardNormal;
+use ultraviolet::DVec3;
+
+use super::system_builder::SKGeneralBuilder;
 
 pub struct LUSystem {
-    pub l_mat: Mat<f32>,
-    pub w_vec: Mat<f32>,
-    pub intermediate_mat: Mat<f32>,
-    pub buffer: GlobalPodBuffer,
+    pub l_mat: Mat<f64>,
+    pub w_vec: Mat<f64>,
+    pub intermediate_mat: Mat<f64>,
+    pub mem_buffer: MemBuffer,
     pub n_sim: usize,
     pub n_cond: usize,
     pub n_total: usize,
@@ -35,20 +40,18 @@ impl LUSystem {
         let n_total = n_sim + n_cond;
 
         //create a buffer large enough to compute cholesky in place
-        let cholesky_required_mem = cholesky::llt::compute::cholesky_in_place_req::<f32>(
+        let cholesky_required_mem = cholesky::llt::factor::cholesky_in_place_scratch::<f64>(
             n_total,
-            Parallelism::None,
-            Default::default(),
-        )
-        .unwrap();
-
-        let buffer = GlobalPodBuffer::new(cholesky_required_mem);
+            Par::Seq,
+            Spec::default(),
+        );
+        let mem_buffer = MemBuffer::new(cholesky_required_mem);
 
         Self {
             l_mat: Mat::zeros(n_total, n_total),
             w_vec: Mat::zeros(n_total, 1),
             intermediate_mat: Mat::zeros(n_sim, n_cond),
-            buffer,
+            mem_buffer,
             n_sim,
             n_cond,
             n_total,
@@ -62,23 +65,29 @@ impl LUSystem {
     /// The variogram model is used to compute the covariance between points.
     /// Note: only the lower triangle of the covariance matrix is required.
     #[inline(always)]
-    pub fn build_cov_matrix<V, T, SKB>(
+    pub fn build_cov_matrix(
         &mut self,
-        cond_points: &[SKB::Support],
-        sim_points: &[SKB::Support],
-        vgram: &V,
-    ) where
-        V: VariogramModel<T>,
-        SKB: SKBuilder,
-        T: SimdValue<Element = f32> + SimdRealField + Copy,
-    {
+        n_cond: usize,
+        n_sim: usize,
+        supports: &[Support],
+        vgram: &CompositeVariogram,
+        h_buffer: &mut Vec<DVec3>,
+        pt_buffer: &mut Vec<DVec3>,
+        var_buffer: &mut Vec<f64>,
+        ind_buffer: &mut Vec<usize>,
+    ) {
         //set dimensions of LU system
-        let n_cond = cond_points.len();
-        let n_sim = sim_points.len();
         self.set_dims(n_cond, n_sim);
 
-        let l_points = cond_points.iter().chain(sim_points);
-        SKB::build_cov_mat(&mut self.l_mat, l_points, vgram)
+        SKGeneralBuilder::build_cov_mat(
+            &mut self.l_mat,
+            supports,
+            vgram,
+            h_buffer,
+            pt_buffer,
+            var_buffer,
+            ind_buffer,
+        );
     }
 
     /// Computes the L matrix from the covariance matrix.
@@ -86,63 +95,54 @@ impl LUSystem {
     /// The L matrix is stored in the lower triangle of the covariance matrix.
     /// The upper triangle of the covariance matrix is not used.
     #[inline(always)]
-    pub(crate) fn compute_l_matrix(&mut self) -> Result<LltInfo, faer::solvers::CholeskyError> {
-        //create dynstacks
-        let mut cholesky_compute_stack = PodStack::new(&mut self.buffer);
+    pub(crate) fn compute_l_matrix(&mut self) -> Result<LltInfo, LltError> {
+        let stack = MemStack::new(&mut self.mem_buffer);
 
         //compute cholseky decomposition of L matrix
-        cholesky::llt::compute::cholesky_in_place(
+        cholesky::llt::factor::cholesky_in_place(
             self.l_mat.as_mut(),
-            Default::default(),
-            Parallelism::None,
-            cholesky_compute_stack.rb_mut(),
-            Default::default(),
+            LltRegularization::default(),
+            Par::Seq,
+            stack,
+            Spec::default(),
         )
     }
 
     /// Build and compute the L matrix for the system.
     #[inline(always)]
-    pub(crate) fn build_l_matrix<V, T, SKB>(
+    pub(crate) fn build_l_matrix(
         &mut self,
-        cond_points: &[SKB::Support],
-        sim_points: &[SKB::Support],
-        vgram: &V,
-    ) -> Result<LltInfo, CholeskyError>
-    where
-        V: VariogramModel<T>,
-        SKB: SKBuilder,
-        T: SimdValue<Element = f32> + SimdRealField + Copy,
-    {
-        let l_points = cond_points.iter().chain(sim_points);
-
-        SKB::build_cov_mat(&mut self.l_mat, l_points, vgram);
-        //println!("cov_mat: {:?}", self.l_mat);
-
-        //create dynstacks
-        let mut cholesky_compute_stack = PodStack::new(&mut self.buffer);
-
-        //compute cholseky decomposition of L matrix
-        cholesky::llt::compute::cholesky_in_place(
-            self.l_mat.as_mut(),
-            Default::default(),
-            Parallelism::None,
-            cholesky_compute_stack.rb_mut(),
-            Default::default(),
-        )
+        supports: &[Support],
+        vgram: &CompositeVariogram,
+        h_buffer: &mut Vec<DVec3>,
+        pt_buffer: &mut Vec<DVec3>,
+        var_buffer: &mut Vec<f64>,
+        ind_buffer: &mut Vec<usize>,
+    ) -> Result<LltInfo, LltError> {
+        SKGeneralBuilder::build_cov_mat(
+            &mut self.l_mat,
+            supports,
+            vgram,
+            h_buffer,
+            pt_buffer,
+            var_buffer,
+            ind_buffer,
+        );
+        self.compute_l_matrix()
     }
 
     /// Populates the w vector with conditioning values and random numbers.
     /// The conditioning values are the first n_cond values in the w vector.
     /// The remaining values are filled with random numbers.
     #[inline(always)]
-    fn populate_w_vec(&mut self, values: &[f32], rng: &mut StdRng) {
+    fn populate_w_vec(&mut self, values: &[f64], rng: &mut StdRng) {
         //populate w vector with conditioning points
         for (i, v) in values.iter().enumerate() {
-            self.w_vec.write(i, 0, *v);
+            *self.w_vec.get_mut(i, 0) = *v;
         }
         // fill remaining values with random numbers
         for i in values.len()..self.w_vec.nrows() {
-            self.w_vec.write(i, 0, rng.sample(StandardNormal));
+            *self.w_vec.get_mut(i, 0) = rng.sample(StandardNormal);
         }
     }
 
@@ -157,11 +157,7 @@ impl LUSystem {
 
         //Want to compute L_gd @ L_dd^-1
         //avoid inverting L_dd by solving L_dd^T * intermediate^T = L_dg^T
-        solve_upper_triangular_in_place(
-            l_dd.as_ref().transpose(),
-            l_gd_t.as_mut(),
-            Parallelism::None,
-        );
+        solve_upper_triangular_in_place(l_dd.as_ref().transpose(), l_gd_t.as_mut(), Par::Seq);
 
         self.intermediate_mat = l_gd_t.transpose_mut().to_owned();
     }
@@ -185,57 +181,54 @@ impl LUSystem {
 
     /// Build and solve the LU system for the given conditioning points, values, and simulation points.
     #[inline(always)]
-    pub fn build_and_solve_system<V, VT, SKB>(
+    pub fn build_and_solve_system(
         &mut self,
-        cond_points: &[SKB::Support],
-        values: &[f32],
-        sim_points: &[SKB::Support],
+        n_cond: usize,
+        n_sim: usize,
+        supports: &[Support],
+        values: &[f64],
         rng: &mut StdRng,
-        vgram: &V,
-    ) where
-        V: VariogramModel<VT>,
-        VT: SimdValue<Element = f32> + SimdRealField + Copy,
-        SKB: SKBuilder,
-    {
-        let n_cond = cond_points.len();
-        let n_sim = sim_points.len();
+        vgram: &CompositeVariogram,
+        h_buffer: &mut Vec<DVec3>,
+        pt_buffer: &mut Vec<DVec3>,
+        var_buffer: &mut Vec<f64>,
+        ind_buffer: &mut Vec<usize>,
+    ) {
         self.set_dims(n_cond, n_sim);
-        let _ = self.build_l_matrix::<_, _, SKB>(cond_points, sim_points, vgram);
+        let _ = self.build_l_matrix(supports, vgram, h_buffer, pt_buffer, var_buffer, ind_buffer);
         self.populate_w_vec(values, rng);
         self.compute_intermediate_mat();
     }
 
     /// Simulate the kriging system by sampling the distribution for each node.
     #[inline(always)]
-    pub fn simulate(&self) -> Vec<f32> {
+    pub fn simulate(&self) -> Vec<f64> {
         let mut sim_mat = Mat::zeros(self.n_sim, 1);
 
         //L_gd @ L_dd^-1 @ w_d
-        matmul::matvec::matvec_with_conj(
+        matmul::matmul(
             sim_mat.as_mut(),
+            Accum::Replace,
             self.intermediate_mat.as_ref(),
-            Conj::No,
             self.w_vec.as_ref().submatrix(0, 0, self.n_cond, 1),
-            Conj::No,
-            None,
             1.0,
+            Par::Seq,
         );
         //L_gg @ w_g
-        matmul::matvec::matvec_with_conj(
+        matmul::matmul(
             sim_mat.as_mut(),
+            Accum::Add,
             self.l_mat
                 .as_ref()
                 .submatrix(self.n_cond, self.n_cond, self.n_sim, self.n_sim),
-            Conj::No,
             self.w_vec.as_ref().submatrix(self.n_cond, 0, self.n_sim, 1),
-            Conj::No,
-            Some(1.0),
             1.0,
+            Par::Seq,
         );
 
         let mut vals = Vec::with_capacity(self.n_sim);
         for i in 0..sim_mat.nrows() {
-            vals.push(sim_mat.read(i, 0));
+            vals.push(*sim_mat.get(i, 0));
         }
 
         vals
@@ -243,24 +236,23 @@ impl LUSystem {
 
     /// Size the system appropriately and build the L matrix for the given conditioning and simulation points.
     #[inline(always)]
-    pub fn set_dims_and_build_l_matrix<V, VT, SKB, MS>(
+    pub fn set_dims_and_build_l_matrix(
         &mut self,
-        cond_points: &[SKB::Support],
-        sim_points: &[SKB::Support],
-        vgram: &V,
-    ) where
-        V: VariogramModel<VT>,
-        VT: SimdValue<Element = f32> + SimdRealField + Copy,
-        SKB: SKBuilder,
-    {
+        n_cond: usize,
+        n_sim: usize,
+        supports: &[Support],
+        vgram: &CompositeVariogram,
+        h_buffer: &mut Vec<DVec3>,
+        pt_buffer: &mut Vec<DVec3>,
+        var_buffer: &mut Vec<f64>,
+        ind_buffer: &mut Vec<usize>,
+    ) {
         //set dimensions of LU system
-        let n_cond = cond_points.len();
-        let n_sim = sim_points.len();
         self.set_dims(n_cond, n_sim);
 
         //build L matrix
         // TODO: handle error
-        let _ = self.build_l_matrix::<_, _, SKB>(cond_points, sim_points, vgram);
+        let _ = self.build_l_matrix(supports, vgram, h_buffer, pt_buffer, var_buffer, ind_buffer);
     }
 }
 
@@ -273,7 +265,7 @@ impl Clone for LUSystem {
 // impl<MS, VT> From<&mut LUSystem> for ModifiedMiniLUSystem<MS, VT>
 // where
 //     MS: MiniLUSystem + for<'a> From<&'a mut LUSystem>,
-//     VT: ValueTransform<Vec<f32>>,
+//     VT: ValueTransform<Vec<f64>>,
 // {
 //     fn from(lu: &mut LUSystem) -> Self {
 //         Self {

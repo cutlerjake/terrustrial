@@ -1,62 +1,55 @@
-use nalgebra::{SimdRealField, SimdValue, UnitQuaternion, Vector3};
-use simba::simd::WideF32x8;
+use std::ops::BitAnd;
+use ultraviolet::{f64x4, DRotor3, DVec3};
+use wide::CmpGt;
 
 use super::VariogramModel;
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Nugget<T>
-where
-    T: SimdValue<Element = f32> + Copy,
-{
-    pub nugget: T,
+pub struct Nugget {
+    pub nugget: f64,
 }
 
-impl<T> Nugget<T>
-where
-    T: SimdValue<Element = f32> + Copy,
-{
-    pub fn new(nugget: T) -> Self {
+impl Nugget {
+    pub fn new(nugget: f64) -> Self {
         Self { nugget }
     }
 }
 
-impl Nugget<f32> {
-    pub fn to_f32x8(&self) -> Nugget<WideF32x8> {
-        Nugget {
-            nugget: WideF32x8::splat(self.nugget),
+impl VariogramModel for Nugget {
+    #[inline(always)]
+    fn c_0(&self) -> f64 {
+        self.nugget
+    }
+
+    #[inline(always)]
+    fn variogram(&self, h: DVec3) -> f64 {
+        let iso_h = h.dot(h);
+
+        if iso_h == 0.0 {
+            0.0
+        } else {
+            self.nugget
         }
     }
-}
-
-impl<T> VariogramModel<T> for Nugget<T>
-where
-    T: SimdValue<Element = f32> + SimdRealField + Copy,
-{
-    #[inline(always)]
-    fn c_0(&self) -> <T as SimdValue>::Element {
-        self.nugget.extract(0)
-    }
 
     #[inline(always)]
-    fn variogram(&self, h: Vector3<T>) -> T {
-        let iso_h = h.norm_squared();
-
-        let mask = !iso_h.simd_eq(T::splat(0.0));
-
-        //create simd variance
-        let simd_v = self.nugget;
-
-        //set lanes of simd variance to 0 where lanes of iso_h == 0.0
-        simd_v.select(mask, T::splat(0.0))
-    }
-
-    #[inline(always)]
-    fn covariogram(&self, h: Vector3<T>) -> T {
+    fn covariogram(&self, h: DVec3) -> f64 {
         self.nugget - self.variogram(h)
     }
 
     #[inline(always)]
-    fn set_orientation(&mut self, _orientation: UnitQuaternion<T>) {
+    fn set_orientation(&mut self, _orientation: DRotor3) {
         // Do nothing
+    }
+
+    fn variogram_simd(&self, h: ultraviolet::DVec3x4) -> f64x4 {
+        let iso_h: f64x4 = h.dot(h);
+        let mask = iso_h.cmp_gt(0.0);
+
+        f64x4::splat(self.nugget).bitand(mask)
+    }
+
+    fn covariogram_simd(&self, h: ultraviolet::DVec3x4) -> f64x4 {
+        self.nugget - self.variogram_simd(h)
     }
 }

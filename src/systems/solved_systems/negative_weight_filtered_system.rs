@@ -1,4 +1,4 @@
-use faer::{unzipped, zipped};
+use faer::{unzip, zip};
 
 use crate::systems::lu::LUSystem;
 
@@ -61,15 +61,15 @@ where
                 let mut weight_sum = 0.0;
                 let mut covariance_sum = 0.0;
                 let mut count = 0;
-                zipped!(node_weights, node_covariances).for_each(|unzipped!(w, c)| {
-                    if w.read() < 0.0 {
-                        weight_sum += w.read().abs();
-                        covariance_sum += c.read();
+                zip!(node_weights, node_covariances).for_each(|unzip!(w, c)| {
+                    if *w < 0.0 {
+                        weight_sum += w.abs();
+                        covariance_sum += *c;
                         count += 1;
                     }
                 });
 
-                (weight_sum / count as f32, covariance_sum / count as f32)
+                (weight_sum / count as f64, covariance_sum / count as f64)
             })
             .unzip();
 
@@ -82,19 +82,15 @@ where
                 .subcols(0, lu_system.n_cond);
 
             let mut weight = 0.0;
-            zipped!(node_weights, node_covariances).for_each(|unzipped!(mut w, c)| {
-                if w.read() < 0.0
-                    || w.read().abs() < avg_abs_neg_weights[i] && c.read() < avg_neg_cov[i]
-                {
-                    w.write(0.0);
+            zip!(node_weights, node_covariances).for_each(|unzip!(w, c)| {
+                if *w < 0.0 || w.abs() < avg_abs_neg_weights[i] && *c < avg_neg_cov[i] {
+                    *w = 0.0;
                 }
-                weight += w.read();
+                weight += *w;
             });
 
             let node_weights = lu_system.intermediate_mat.as_mut().row_mut(i);
-            zipped!(node_weights).for_each(|unzipped!(mut w)| {
-                w.write(w.read() / weight);
-            });
+            zip!(node_weights).for_each(|unzip!(w)| *w = *w / weight);
         });
 
         Ok(SolvedNegativeWeightFilteredSystem { system: sys })
@@ -118,7 +114,7 @@ where
     fn populate_cond_values_est<I>(&mut self, values: I)
     where
         I: IntoIterator,
-        I::Item: std::borrow::Borrow<f32>,
+        I::Item: std::borrow::Borrow<f64>,
     {
         self.system.populate_cond_values_est(values);
     }
@@ -126,24 +122,24 @@ where
     fn populate_cond_values_sim<I>(&mut self, values: I, rng: &mut rand::prelude::StdRng)
     where
         I: IntoIterator,
-        I::Item: std::borrow::Borrow<f32>,
+        I::Item: std::borrow::Borrow<f64>,
     {
         self.system.populate_cond_values_sim(values, rng);
     }
 
-    fn estimate(&self) -> Vec<f32> {
+    fn estimate(&self) -> Vec<f64> {
         self.system.estimate()
     }
 
-    fn simulate(&self) -> Vec<f32> {
+    fn simulate(&self) -> Vec<f64> {
         self.system.simulate()
     }
 
-    fn weights(&self) -> faer::prelude::MatRef<f32> {
+    fn weights(&self) -> faer::prelude::MatRef<f64> {
         self.system.weights()
     }
 
-    fn weights_mut(&mut self) -> faer::prelude::MatMut<f32> {
+    fn weights_mut(&mut self) -> faer::prelude::MatMut<f64> {
         self.system.weights_mut()
     }
 }

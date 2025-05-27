@@ -1,15 +1,12 @@
-use nalgebra::{SimdRealField, SimdValue, UnitQuaternion};
-use simba::simd::WideF32x8;
+use ultraviolet::{DRotor3, DVec3, DVec3x4};
+use wide::f64x4;
 
 use super::{nugget::Nugget, spherical::SphericalVariogram, VariogramModel};
 
 #[derive(Clone, Debug)]
-pub enum VariogramType<T>
-where
-    T: SimdValue<Element = f32> + Copy,
-{
-    Nugget(Nugget<T>),
-    Spherical(SphericalVariogram<T>),
+pub enum VariogramType {
+    Nugget(Nugget),
+    Spherical(SphericalVariogram),
     //TODO
     // Exponential,
     // Gaussian,
@@ -19,41 +16,43 @@ where
     // Custom,
 }
 
-impl VariogramType<f32> {
-    pub fn to_f32x8(&self) -> VariogramType<WideF32x8> {
-        match self {
-            VariogramType::Nugget(n) => VariogramType::Nugget(n.to_f32x8()),
-            VariogramType::Spherical(s) => VariogramType::Spherical(s.to_f32x8()),
-        }
-    }
-}
-
-impl<T> VariogramModel<T> for VariogramType<T>
-where
-    T: SimdValue<Element = f32> + SimdRealField + Copy,
-{
-    fn c_0(&self) -> <T as SimdValue>::Element {
+impl VariogramModel for VariogramType {
+    fn c_0(&self) -> f64 {
         match self {
             VariogramType::Spherical(v) => v.c_0(),
             &VariogramType::Nugget(v) => v.c_0(),
         }
     }
 
-    fn variogram(&self, h: nalgebra::Vector3<T>) -> T {
+    fn variogram(&self, h: DVec3) -> f64 {
         match self {
             VariogramType::Spherical(v) => v.variogram(h),
             VariogramType::Nugget(v) => v.variogram(h),
         }
     }
 
-    fn covariogram(&self, h: nalgebra::Vector3<T>) -> T {
+    fn covariogram(&self, h: DVec3) -> f64 {
         match self {
             VariogramType::Spherical(v) => v.covariogram(h),
             VariogramType::Nugget(v) => v.covariogram(h),
         }
     }
 
-    fn set_orientation(&mut self, orientation: UnitQuaternion<T>) {
+    fn variogram_simd(&self, h: DVec3x4) -> f64x4 {
+        match self {
+            VariogramType::Spherical(v) => v.variogram_simd(h),
+            VariogramType::Nugget(v) => v.variogram_simd(h),
+        }
+    }
+
+    fn covariogram_simd(&self, h: DVec3x4) -> f64x4 {
+        match self {
+            VariogramType::Spherical(v) => v.covariogram_simd(h),
+            VariogramType::Nugget(v) => v.covariogram_simd(h),
+        }
+    }
+
+    fn set_orientation(&mut self, orientation: DRotor3) {
         match self {
             VariogramType::Spherical(v) => v.set_orientation(orientation),
             VariogramType::Nugget(_) => {}
@@ -62,62 +61,52 @@ where
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct CompositeVariogram<T>
-where
-    T: SimdValue<Element = f32> + Copy,
-{
-    pub variograms: Vec<VariogramType<T>>,
+pub struct CompositeVariogram {
+    pub variograms: Vec<VariogramType>,
 }
 
-impl<T> CompositeVariogram<T>
-where
-    T: SimdValue<Element = f32> + Copy,
-{
-    pub fn new(variograms: Vec<VariogramType<T>>) -> Self {
+impl CompositeVariogram {
+    pub fn new(variograms: Vec<VariogramType>) -> Self {
         Self { variograms }
     }
 
-    pub fn set_orientation(&mut self, orientation: UnitQuaternion<T>)
-    where
-        T: SimdRealField,
-    {
+    pub fn set_orientation(&mut self, orientation: DRotor3) {
         for v in self.variograms.iter_mut() {
-            if let VariogramType::Spherical(s) = v {
-                s.rotation = orientation.inverse();
-            }
+            v.set_orientation(orientation);
         }
     }
 }
 
-impl CompositeVariogram<f32> {
-    pub fn to_f32x8(&self) -> CompositeVariogram<WideF32x8> {
-        CompositeVariogram {
-            variograms: self.variograms.iter().map(|v| v.to_f32x8()).collect(),
-        }
-    }
-}
-
-impl<T> VariogramModel<T> for CompositeVariogram<T>
-where
-    T: SimdValue<Element = f32> + SimdRealField + Copy,
-{
-    fn c_0(&self) -> <T as SimdValue>::Element {
+impl VariogramModel for CompositeVariogram {
+    fn c_0(&self) -> f64 {
         self.variograms.iter().map(VariogramModel::c_0).sum()
     }
 
-    fn variogram(&self, h: nalgebra::Vector3<T>) -> T {
+    fn variogram(&self, h: DVec3) -> f64 {
         self.variograms
             .iter()
-            .fold(T::splat(0.0), |acc, v| acc + v.variogram(h))
+            .fold(0.0, |acc, v| acc + v.variogram(h))
     }
 
-    fn covariogram(&self, h: nalgebra::Vector3<T>) -> T {
+    fn covariogram(&self, h: DVec3) -> f64 {
         self.variograms
             .iter()
-            .fold(T::splat(0.0), |acc, v| acc + v.covariogram(h))
+            .fold(0.0, |acc, v| acc + v.covariogram(h))
     }
 
-    fn set_orientation(&mut self, orientation: UnitQuaternion<T>) {
+    fn variogram_simd(&self, h: DVec3x4) -> f64x4 {
+        self.variograms
+            .iter()
+            .fold(f64x4::splat(0.0), |acc, v| acc + v.variogram_simd(h))
+    }
+
+    fn covariogram_simd(&self, h: DVec3x4) -> f64x4 {
+        self.variograms
+            .iter()
+            .fold(f64x4::splat(0.0), |acc, v| acc + v.covariogram_simd(h))
+    }
+
+    fn set_orientation(&mut self, orientation: DRotor3) {
         for v in self.variograms.iter_mut() {
             v.set_orientation(orientation);
         }
@@ -126,16 +115,15 @@ where
 
 #[cfg(test)]
 mod test {
-    use nalgebra::Vector3;
 
     use super::*;
 
     #[test]
     fn composite_variogram() {
-        let spherical = VariogramType::Spherical(SphericalVariogram::<f32>::new(
-            Vector3::new(1.0, 1.0, 1.0),
+        let spherical = VariogramType::Spherical(SphericalVariogram::new(
+            DVec3::new(1.0, 1.0, 1.0),
             1.0,
-            UnitQuaternion::identity(),
+            DRotor3::identity(),
         ));
 
         let composite = CompositeVariogram::new(vec![spherical.clone()]);
@@ -144,17 +132,17 @@ mod test {
         assert!(composite.c_0() == spherical.c_0());
 
         assert!(
-            composite.covariogram(Vector3::new(0.5, 0.5, 0.5))
-                == spherical.covariogram(Vector3::new(0.5, 0.5, 0.5))
+            composite.covariogram(DVec3::new(0.5, 0.5, 0.5))
+                == spherical.covariogram(DVec3::new(0.5, 0.5, 0.5))
         );
 
         assert!(
-            composite.variogram(Vector3::new(1.0, 1.0, 1.0))
-                == spherical.variogram(Vector3::new(1.0, 1.0, 1.0))
+            composite.variogram(DVec3::new(1.0, 1.0, 1.0))
+                == spherical.variogram(DVec3::new(1.0, 1.0, 1.0))
         );
         assert!(
-            composite.covariogram(Vector3::new(1.0, 1.0, 1.0))
-                == spherical.covariogram(Vector3::new(1.0, 1.0, 1.0))
+            composite.covariogram(DVec3::new(1.0, 1.0, 1.0))
+                == spherical.covariogram(DVec3::new(1.0, 1.0, 1.0))
         );
     }
 }

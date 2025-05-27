@@ -1,19 +1,38 @@
-use nalgebra::{Unit, UnitVector3, Vector3};
+use ultraviolet::DVec3;
 
 pub mod declustering;
-pub mod estimators;
 pub mod geometry;
-pub mod node_providers;
+pub mod group_operators;
 pub mod spatial_database;
 pub mod systems;
 pub mod variography;
 
-pub mod re_export {
-    pub use nalgebra;
-    pub use parry3d;
-    pub use simba;
+pub mod prelude {
+    pub mod re_export {
+        pub use nalgebra;
+        pub use parry3d_f64;
+        pub use simba;
+    }
+
+    pub use crate::group_operators::{
+        generalized_sequential_indicator_kriging::estimate as gsik_estimate,
+        generalized_sequential_kriging::{estimate as gsk_estimate, simulate as gsk_simulate},
+        inverse_distance::estimate as id_estimate,
+    };
 }
 
-pub const FORWARD: UnitVector3<f32> = Unit::new_unchecked(Vector3::new(0.0, 1.0, 0.0));
-pub const RIGHT: UnitVector3<f32> = Unit::new_unchecked(Vector3::new(1.0, 0.0, 0.0));
-pub const UP: UnitVector3<f32> = Unit::new_unchecked(Vector3::new(0.0, 0.0, 1.0));
+pub const FORWARD: DVec3 = DVec3 {
+    x: 0.0,
+    y: 1.0,
+    z: 0.0,
+};
+pub const RIGHT: DVec3 = DVec3 {
+    x: 1.0,
+    y: 0.0,
+    z: 0.0,
+};
+pub const UP: DVec3 = DVec3 {
+    x: 0.0,
+    y: 0.0,
+    z: 1.0,
+};

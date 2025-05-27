@@ -1,6 +1,6 @@
 use nalgebra::Point3;
 
-use parry3d::bounding_volume::Aabb;
+use parry3d_f64::bounding_volume::Aabb;
 use rand::Rng;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;

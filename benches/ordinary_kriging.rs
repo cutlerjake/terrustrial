@@ -2,12 +2,12 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use nalgebra::{Point3, SimdValue, Translation3, UnitQuaternion, Vector3};
 use simba::simd::WideF32x8;
 use terrustrial::{
-    estimators::{
+    geometry::ellipsoid::Ellipsoid,
+    group_operators::{
         generalized_sequential_kriging::{GSKSystemParameters, GSK},
-        simple_kriging::SKPointSupportBuilder,
+        system_builder::SKPointSupportBuilder,
         ConditioningParams,
     },
-    geometry::ellipsoid::Ellipsoid,
     node_providers::point_group::PointGroupProvider,
     spatial_database::{coordinate_system::CoordinateSystem, rtree_point_set::point_set::PointSet},
     systems::solved_systems::{ok_system::SolvedLUOKSystemBuilder, SolvedSystemBuilder},

@@ -8,16 +8,16 @@ use num_traits::Float;
 use super::SpatialDataBase;
 
 pub struct Normalzer {
-    mean: f32,
-    std_dev: f32,
+    mean: f64,
+    std_dev: f64,
 }
 
-impl Normalize<f32> for Normalzer {
-    fn normalize(&mut self) -> (f32, f32) {
+impl Normalize<f64> for Normalzer {
+    fn normalize(&mut self) -> (f64, f64) {
         (self.mean, self.std_dev)
     }
 
-    fn back_transform(&mut self, mean: f32, std_dev: f32) {
+    fn back_transform(&mut self, mean: f64, std_dev: f64) {
         self.mean = mean;
         self.std_dev = std_dev;
     }

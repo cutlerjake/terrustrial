@@ -16,19 +16,20 @@ portable_simd = ["simba", "simba/portable_simd"]
 
 [dependencies]
 # Linalg
-faer = "0.19.2"
+faer = "0.22.6"
 nalgebra = { version = "0.33.0", features = ["std", "serde-serialize"] }
 ndarray = "0.15.6"
-dyn-stack = "0.10.0"
+dyn-stack = "0.13.0"
 
 # Math
-parry3d = { version = "0.17.0", features = ["simd-stable"] }
+parry3d-f64 = { version = "0.17.0", features = ["simd-stable"] }
 rstar = { version = "0.12.0", features = ["serde"] }
 rand = "0.8.5"
 rand_distr = "0.4.3"
 num-traits = "0.2.15"
 approx = "0.5.1"
 simba = { version = "0.9.0", optional = true }
+ultraviolet = { version = "0.10.0", features = ["f64", "mint"] }
 
 # Utils
 serde = { version = "1", features = ["derive"] }
@@ -38,6 +39,7 @@ permutation = "0.4.1"
 indicatif = { version = "0.17.5", features = ["rayon"] }
 rayon = "1.8.1"
 csv = "1.2.2"
+wide = "0.7.32"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

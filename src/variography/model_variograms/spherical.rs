@@ -1,101 +1,107 @@
-use nalgebra::Quaternion;
-use nalgebra::SimdRealField;
-use nalgebra::UnitQuaternion;
-use nalgebra::Vector3;
-use simba::simd::WideF32x8;
+use std::ops::DivAssign;
+use ultraviolet::DMat3;
+use ultraviolet::DMat3x4;
+use ultraviolet::DRotor3;
+use ultraviolet::DVec3;
+use ultraviolet::DVec3x4;
+use wide::f64x4;
+use wide::CmpEq;
+use wide::CmpGt;
 
 use super::VariogramModel;
-use simba::simd::SimdValue;
 
 #[derive(Clone, Copy, Debug)]
-pub struct SphericalVariogram<T>
-where
-    T: SimdValue<Element = f32> + Copy,
-{
-    pub range: Vector3<T>,
-    pub sill: T,
-    pub rotation: UnitQuaternion<T>,
+pub struct SphericalVariogram {
+    pub range: DVec3,
+    pub sill: f64,
+    pub rotation: DMat3,
 }
 
-impl<T> Default for SphericalVariogram<T>
-where
-    T: SimdValue<Element = f32> + Copy + SimdRealField,
-{
+impl Default for SphericalVariogram {
     fn default() -> Self {
-        let quat = UnitQuaternion::from_quaternion(Quaternion::from_real(T::splat(1.0)));
         Self {
-            range: Vector3::new(T::splat(1.0), T::splat(1.0), T::splat(1.0)),
-            sill: T::splat(1.0),
-            rotation: quat,
+            range: DVec3 {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            },
+            sill: 1.0,
+            rotation: DRotor3::identity().into_matrix(),
         }
     }
 }
 
-impl<T> SphericalVariogram<T>
-where
-    T: SimdValue<Element = f32> + Copy,
-    T: SimdRealField,
-    T::Element: SimdRealField,
-{
-    pub fn new(range: Vector3<T>, sill: T, rotation: UnitQuaternion<T>) -> Self {
+impl SphericalVariogram {
+    pub fn new(range: DVec3, sill: f64, rotation: DRotor3) -> Self {
         Self {
             range,
             sill,
-            rotation: rotation.inverse(),
+            rotation: rotation.reversed().into_matrix(),
         }
     }
 }
 
-impl SphericalVariogram<f32> {
-    pub fn to_f32x8(&self) -> SphericalVariogram<WideF32x8> {
-        SphericalVariogram {
-            range: Vector3::splat(self.range),
-            sill: WideF32x8::splat(self.sill),
-            rotation: UnitQuaternion::splat(self.rotation),
+impl VariogramModel for SphericalVariogram {
+    #[inline(always)]
+    fn c_0(&self) -> f64 {
+        self.sill
+    }
+
+    #[inline(always)]
+    fn variogram(&self, mut h: DVec3) -> f64 {
+        h = self.rotation * h;
+
+        h.div_assign(self.range);
+        let iso_h = h.mag();
+
+        if iso_h == 0.0 {
+            0.0
+        } else if iso_h < 1.0 {
+            self.sill * (1.5 * iso_h - 0.5 * iso_h * iso_h * iso_h)
+        } else {
+            self.sill
         }
     }
-}
-
-impl<T> VariogramModel<T> for SphericalVariogram<T>
-where
-    T: SimdValue<Element = f32> + SimdRealField + Copy,
-{
-    #[inline(always)]
-    fn c_0(&self) -> <T as SimdValue>::Element {
-        self.sill.extract(0)
-    }
 
     #[inline(always)]
-    fn variogram(&self, h: Vector3<T>) -> T {
-        let mut h = self.rotation.transform_vector(&h);
-
-        h.component_div_assign(&self.range);
-        let iso_h = h.norm();
-
-        let mask = !iso_h.simd_eq(T::splat(0.0));
-
-        let simd_1_5 = T::splat(1.5);
-        let simd_0_5 = T::splat(0.5);
-
-        //create simd variance
-        let mut simd_v = self.sill * (simd_1_5 * iso_h - simd_0_5 * iso_h * iso_h * iso_h);
-
-        //set lanes of simd variance to 0 where lanes of iso_h == 0.0
-        simd_v = simd_v.select(mask, T::splat(0.0));
-
-        let mask = iso_h.simd_le(T::splat(1.0));
-
-        simd_v.select(mask, self.sill)
-    }
-
-    #[inline(always)]
-    fn covariogram(&self, h: Vector3<T>) -> T {
+    fn covariogram(&self, h: DVec3) -> f64 {
         self.sill - self.variogram(h)
     }
 
     #[inline(always)]
-    fn set_orientation(&mut self, orientation: UnitQuaternion<T>) {
-        self.rotation = orientation.inverse();
+    fn set_orientation(&mut self, orientation: DRotor3) {
+        self.rotation = orientation.reversed().into_matrix();
+    }
+
+    fn variogram_simd(&self, mut h: ultraviolet::DVec3x4) -> wide::f64x4 {
+        let rotation = DMat3x4 {
+            cols: [
+                DVec3x4::splat(self.rotation.cols[0]),
+                DVec3x4::splat(self.rotation.cols[1]),
+                DVec3x4::splat(self.rotation.cols[2]),
+            ],
+        };
+
+        h = rotation * h;
+
+        h.div_assign(DVec3x4::splat(self.range));
+
+        let iso_h = h.mag();
+
+        let mask_low = iso_h.cmp_eq(0.0);
+        let mask_high = iso_h.cmp_gt(1.0);
+        let mask_middle = !mask_low & !mask_high;
+
+        let low_vals = f64x4::splat(0.0) & mask_low;
+        let high_vals = f64x4::splat(self.sill) & mask_high;
+        let middle_vals =
+            (f64x4::splat(self.sill) * (1.5 * iso_h - 0.5 * iso_h * iso_h * iso_h)) & mask_middle;
+
+        low_vals | high_vals | middle_vals
+    }
+
+    fn covariogram_simd(&self, h: ultraviolet::DVec3x4) -> wide::f64x4 {
+        self.sill - self.variogram_simd(h)
     }
 }
 
@@ -108,27 +114,24 @@ mod test {
         let sill = 1.0;
         let range = 300.0;
 
-        let vgram = SphericalVariogram::<f32>::new(
-            Vector3::new(range, range, range),
-            sill,
-            UnitQuaternion::identity(),
-        );
+        let vgram =
+            SphericalVariogram::new(DVec3::new(range, range, range), sill, DRotor3::identity());
 
         let dists = vec![
-            Vector3::new(0.0, 0.0, 0.0),
-            Vector3::new(46.1, 0.0, 0.0),
-            Vector3::new(72.8, 0.0, 0.0),
-            Vector3::new(68.01, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(46.1, 0.0, 0.0),
+            DVec3::new(72.8, 0.0, 0.0),
+            DVec3::new(68.01, 0.0, 0.0),
         ];
 
         println!("Variance");
         for d in dists.iter() {
-            println!("dist: {} v: {}", d.norm(), vgram.variogram(*d));
+            println!("dist: {} v: {}", d.mag(), vgram.variogram(*d));
         }
 
         println!("Covariance");
         for d in dists.iter() {
-            println!("dist: {} v: {}", d.norm(), vgram.covariogram(*d));
+            println!("dist: {} v: {}", d.mag(), vgram.covariogram(*d));
         }
     }
 }

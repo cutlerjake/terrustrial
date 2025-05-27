@@ -34,7 +34,7 @@ impl<B, T> ModifiedSolvedLUSystemBuilder<B, T> {
 impl<B, VT> SolvedSystemBuilder for ModifiedSolvedLUSystemBuilder<B, VT>
 where
     B: SolvedSystemBuilder + Send,
-    VT: ValueTransform<f32> + Clone + Send,
+    VT: ValueTransform<f64> + Clone + Send + Sync,
 {
     type SolvedSystem = ModifiedSolvedLUSystem<B::SolvedSystem, VT>;
     type Error = B::Error;
@@ -55,7 +55,7 @@ where
 pub struct ModifiedSolvedLUSystem<MS, VT>
 where
     MS: SolvedLUSystem,
-    VT: ValueTransform<f32>,
+    VT: ValueTransform<f64>,
 {
     system: MS,
     modifier: VT,
@@ -64,14 +64,14 @@ where
 impl<MS, VT> SolvedLUSystem for ModifiedSolvedLUSystem<MS, VT>
 where
     MS: SolvedLUSystem + Clone,
-    VT: ValueTransform<f32> + Clone,
+    VT: ValueTransform<f64> + Clone,
 {
     /// Populate the conditional values for the estimator.
     /// The values are transformed using the forward transform of the modifier.
     fn populate_cond_values_est<I>(&mut self, values: I)
     where
         I: IntoIterator,
-        I::Item: Borrow<f32>,
+        I::Item: Borrow<f64>,
     {
         self.system.populate_cond_values_est(
             values
@@ -85,7 +85,7 @@ where
     fn populate_cond_values_sim<I>(&mut self, values: I, rng: &mut StdRng)
     where
         I: IntoIterator,
-        I::Item: Borrow<f32>,
+        I::Item: Borrow<f64>,
     {
         self.system.populate_cond_values_sim(
             values
@@ -97,7 +97,7 @@ where
 
     /// Estimate the system.
     /// The values are transformed using the backward transform of the modifier.
-    fn estimate(&self) -> Vec<f32> {
+    fn estimate(&self) -> Vec<f64> {
         self.system
             .estimate()
             .iter()
@@ -107,7 +107,7 @@ where
 
     /// Simulate the system.
     /// The values are transformed using the backward transform of the modifier.
-    fn simulate(&self) -> Vec<f32> {
+    fn simulate(&self) -> Vec<f64> {
         self.system
             .simulate()
             .iter()
@@ -115,11 +115,11 @@ where
             .collect()
     }
 
-    fn weights(&self) -> MatRef<f32> {
+    fn weights(&self) -> MatRef<f64> {
         self.system.weights()
     }
 
-    fn weights_mut(&mut self) -> MatMut<f32> {
+    fn weights_mut(&mut self) -> MatMut<f64> {
         self.system.weights_mut()
     }
 }

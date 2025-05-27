@@ -1,34 +1,32 @@
-use nalgebra::{Point3, SimdComplexField, SimdPartialOrd, SimdValue, UnitQuaternion, Vector3};
-use parry3d::bounding_volume::BoundingVolume;
-use simba::simd::{WideBoolF32x8, WideF32x8};
+use ultraviolet::{DMat3x4, DVec3, DVec3x4};
+use wide::{f64x4, CmpGe, CmpGt, CmpLe, CmpLt};
 
-use crate::FORWARD;
+use crate::{spatial_database::coordinate_system::NewCoordinateSystem, FORWARD};
 
-use super::elliptical_cylindar::bounding_box_of_oriented_ellipse;
+use super::{aabb::Aabb, elliptical_cylindar::bounding_box_of_oriented_ellipse};
 
 pub struct VariogramTolerance {
-    pub p1: Point3<f32>,
-    pub length: f32,
-    pub a: f32,
-    pub a_tol: f32,
-    pub a_dist_threshold: f32,
-    pub b: f32,
-    pub b_tol: f32,
-    pub b_dist_threshold: f32,
-    pub orientation: UnitQuaternion<f32>,
-    pub base: Point3<f32>,
-    pub offset: f32,
+    pub p1: DVec3,
+    pub length: f64,
+    pub a: f64,
+    pub a_tol: f64,
+    pub a_dist_threshold: f64,
+    pub b: f64,
+    pub b_tol: f64,
+    pub b_dist_threshold: f64,
+    pub cs: NewCoordinateSystem,
+    pub offset: f64,
 }
 
 impl VariogramTolerance {
     pub fn new(
-        p1: Point3<f32>,
-        length: f32,
-        a: f32,
-        a_tol: f32,
-        b: f32,
-        b_tol: f32,
-        orientation: UnitQuaternion<f32>,
+        p1: DVec3,
+        length: f64,
+        a: f64,
+        a_tol: f64,
+        b: f64,
+        b_tol: f64,
+        cs: NewCoordinateSystem,
     ) -> Self {
         let a_dist_threshold = a / a_tol.tan();
         let b_dist_threshold = b / b_tol.tan();
@@ -42,26 +40,25 @@ impl VariogramTolerance {
             b,
             b_tol,
             b_dist_threshold,
-            orientation,
-            base: p1,
+            cs,
             offset: 0.0,
         }
     }
 
-    pub fn offset_along_axis(&mut self, offset: f32) {
+    pub fn offset_along_axis(&mut self, offset: f64) {
         // self.p1 += self.axis.scale(offset);
-        self.p1 += self.orientation * FORWARD.into_inner() * offset;
+        self.p1 += self.cs.into_local().rotation * FORWARD * offset;
         self.offset += offset;
     }
 
-    pub fn set_base(&mut self, base: Point3<f32>) {
+    pub fn set_base(&mut self, base: DVec3) {
         self.p1 = base;
-        self.base = base;
+        self.cs.set_origin(base);
         self.offset = 0.0;
     }
 
-    pub fn loose_aabb(&self) -> parry3d::bounding_volume::Aabb {
-        let cylinder_axis = self.orientation * FORWARD.into_inner();
+    pub fn loose_aabb(&self) -> Aabb {
+        let cylinder_axis = self.cs.into_local().rotation * FORWARD;
 
         let far_dist = self.offset + self.length;
         let far_a = if far_dist >= self.a_dist_threshold {
@@ -78,10 +75,10 @@ impl VariogramTolerance {
 
         // AABB of the ellipse at the far end of the cylinder
         let far_aabb = bounding_box_of_oriented_ellipse(
-            self.base + far_dist * cylinder_axis,
+            self.cs.into_global().translation + far_dist * cylinder_axis,
             far_a,
             far_b,
-            self.orientation,
+            self.cs.into_global().rotation,
         );
 
         let near_a = if self.offset >= self.a_dist_threshold {
@@ -99,32 +96,37 @@ impl VariogramTolerance {
         let max_ab = near_a.max(near_b);
         let d = self.offset;
 
-        let shift = d - f32::sqrt(d * d - max_ab * max_ab);
-        let pt = self.base + (self.offset - shift) * cylinder_axis;
-        let near_aabb = bounding_box_of_oriented_ellipse(pt, far_a, far_b, self.orientation);
+        let shift = d - f64::sqrt(d * d - max_ab * max_ab);
+        let pt = self.cs.into_global().translation + (self.offset - shift) * cylinder_axis;
+        let near_aabb =
+            bounding_box_of_oriented_ellipse(pt, far_a, far_b, self.cs.into_global().rotation);
 
         far_aabb.merged(&near_aabb)
     }
 
-    pub fn contains_point(&self, point: Point3<f32>) -> bool {
-        let dist = (point - self.base).norm();
+    pub fn contains_point(&self, point: DVec3) -> bool {
+        let dist = (point - self.cs.into_global().translation).mag();
 
         if dist < self.offset || dist > self.offset + self.length {
             return false;
         }
 
-        let cylinder_axis = self.orientation * FORWARD.into_inner() * (self.length + self.offset);
+        let cylinder_axis = self.cs.into_global().rotation * FORWARD * (self.length + self.offset);
 
-        let v = point - self.base;
-        let dot = v.dot(&cylinder_axis);
+        let v = point - self.cs.into_global().translation;
+        let dot = v.dot(cylinder_axis);
 
         if dot <= 0.0 {
             return false;
         }
 
-        let cylinder_aligned_point = self.orientation.inverse_transform_point(&v.into());
+        let mut cylinder_aligned_point = v;
+        self.cs
+            .into_local()
+            .rotation
+            .rotate_vec(&mut cylinder_aligned_point);
 
-        let axial_dist = ((point - self.base).dot(&cylinder_axis)).sqrt();
+        let axial_dist = ((point - self.cs.into_global().translation).dot(cylinder_axis)).sqrt();
 
         let a = if axial_dist >= self.a_dist_threshold {
             self.a
@@ -140,7 +142,7 @@ impl VariogramTolerance {
 
         if cylinder_aligned_point.x * cylinder_aligned_point.x / (a * a)
             + cylinder_aligned_point.z * cylinder_aligned_point.z / (b * b)
-            > 1f32
+            > 1f64
         {
             return false;
         }
@@ -148,65 +150,71 @@ impl VariogramTolerance {
         true
     }
 
-    pub fn contains_point_vectorized(&self, points: &Point3<WideF32x8>) -> WideBoolF32x8 {
-        let base = Point3::splat(self.base);
-        let dist = (points - base).norm();
+    pub fn contains_point_vectorized(&self, points: DVec3x4) -> [bool; 4] {
+        // let base = Point3::splat(self.base);
+        let base = DVec3x4::splat(self.cs.into_global().translation);
+        let dist = (points - base).mag();
 
-        let dist_mask = dist.simd_lt(WideF32x8::splat(self.offset))
-            | dist.simd_gt(WideF32x8::splat(self.offset + self.length));
+        let dist_mask = dist.cmp_lt(self.offset) | dist.cmp_gt(self.offset + self.length);
 
         let cylinder_axis =
-            Vector3::splat(self.orientation * FORWARD.into_inner() * (self.length + self.offset));
+            DVec3x4::splat(self.cs.into_global().rotation * FORWARD * (self.length + self.offset));
 
         let v = points - base;
-        let dot = v.dot(&cylinder_axis);
+        let dot = v.dot(cylinder_axis);
 
-        let dot_mask = dot.simd_le(WideF32x8::splat(0.0));
+        let dot_mask = dot.cmp_le(0.0);
 
-        let wide_orientation = UnitQuaternion::splat(self.orientation);
+        let rot_mat = self.cs.into_local().rotation.into_matrix();
+        let wide_rot_mat = DMat3x4::new(
+            DVec3x4::splat(rot_mat.cols[0]),
+            DVec3x4::splat(rot_mat.cols[1]),
+            DVec3x4::splat(rot_mat.cols[2]),
+        );
 
-        let cylinder_aligned_point = wide_orientation.inverse_transform_point(&v.into());
+        let cylinder_aligned_point = wide_rot_mat * v;
+        let axial_dist = ((points - base).dot(cylinder_axis)).sqrt();
 
-        let axial_dist = ((points - base).dot(&cylinder_axis)).simd_sqrt();
+        let a_mask = axial_dist.cmp_ge(self.a_dist_threshold);
+        let a = (f64x4::splat(self.a) & a_mask)
+            | (axial_dist * f64x4::splat(self.a_tol.tan()) & !a_mask);
 
-        let a_mask = axial_dist.simd_ge(WideF32x8::splat(self.a_dist_threshold));
-        let a = WideF32x8::splat(self.a)
-            .select(a_mask, axial_dist * WideF32x8::splat(self.a_tol.tan()));
-
-        let b_mask = axial_dist.simd_ge(WideF32x8::splat(self.b_dist_threshold));
-        let b = WideF32x8::splat(self.b)
-            .select(b_mask, axial_dist * WideF32x8::splat(self.b_tol.tan()));
+        let b_mask = axial_dist.cmp_ge(self.b_dist_threshold);
+        let b = (f64x4::splat(self.b) & b_mask)
+            | (axial_dist * f64x4::splat(self.b_tol.tan()) & !b_mask);
 
         let x = cylinder_aligned_point.x / a;
         let z = cylinder_aligned_point.z / b;
 
-        (x * x + z * z).simd_le(WideF32x8::splat(1.0)) & !dist_mask & !dot_mask
+        ((x * x + z * z).cmp_le(1.0) & !dist_mask & !dot_mask)
+            .as_array_ref()
+            .map(|x| x != 0.0)
     }
 }
 
-pub fn collect_points(points: &[Point3<f32>]) -> Vec<Point3<WideF32x8>> {
+pub fn collect_points(points: &[DVec3]) -> Vec<DVec3x4> {
     let mut result = Vec::new();
-    let chunk_size = 8;
+    const CHUNK_SIZE: usize = 4;
 
-    for chunk in points.chunks(chunk_size) {
-        let mut x = [f32::MAX; 8];
-        let mut y = [f32::MAX; 8];
-        let mut z = [f32::MAX; 8];
+    for chunk in points.chunks(CHUNK_SIZE) {
+        let mut x = [f64::MAX; CHUNK_SIZE];
+        let mut y = [f64::MAX; CHUNK_SIZE];
+        let mut z = [f64::MAX; CHUNK_SIZE];
 
         for (i, point) in chunk.iter().enumerate() {
-            if i < chunk_size {
+            if i < CHUNK_SIZE {
                 x[i] = point.x;
                 y[i] = point.y;
                 z[i] = point.z;
             }
         }
 
-        // Create WideF32x8 from the collected data
-        let wide_x = WideF32x8::from(x);
-        let wide_y = WideF32x8::from(y);
-        let wide_z = WideF32x8::from(z);
+        // Create WideF64x4 from the collected data
+        let wide_x = f64x4::from(x);
+        let wide_y = f64x4::from(y);
+        let wide_z = f64x4::from(z);
 
-        result.push(Point3::new(wide_x, wide_y, wide_z));
+        result.push(DVec3x4::new(wide_x, wide_y, wide_z));
     }
 
     result
