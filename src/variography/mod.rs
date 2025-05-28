@@ -1,2 +1,2 @@
-pub mod experimental_variogram;
+pub mod experimental;
 pub mod model_variograms;

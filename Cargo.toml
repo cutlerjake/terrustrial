@@ -11,37 +11,27 @@ incremental = true
 
 
 [features]
-default = ["simba", "simba/wide"]
-packed = ["simba", "simba/packed_simd"]
+# default = ["simba", "simba/wide"]
+# portable_simd = ["simba", "simba/portable_simd"]
 
 [dependencies]
-approx = "0.5.1"
-faer = "0.11.0"
-faer-core = "0.11.0"
-faer-cholesky = "0.11.0"
-nalgebra = { version = "0.32.3", features = ["std"] }
-ndarray = "0.15.6"
-num-traits = "0.2.15"
-parry3d = { version = "0.13.5", features = ["simd-stable"] }
+# Linalg
+faer = "0.22.6"
+dyn-stack = "0.13.0"
+
+# Math
+rstar = { version = "0.12.0", features = ["serde"] }
 rand = "0.8.5"
-rstar = "0.11.0"
-dyn-stack = "0.9.0"
-# simba = { git = "https://github.com/dimforge/simba.git", branch = "master", features = [
-#     "packed_simd",
-# ] }
-simba = { version = "0.8.1", features = ["packed_simd"], optional = true }
-bitvec = "1.0.1"
-ordered-float = "3.7.0"
-indicatif = { version = "0.17.5", features = ["rayon"] }
-rayon = "1.7.0"
-csv = "1.2.2"
-itertools = "0.11.0"
 rand_distr = "0.4.3"
-mathru = "0.15.2"
+num-traits = "0.2.15"
+ultraviolet = { version = "0.10.0", features = ["f64", "mint"] }
 
-
-#Fails to build with rust 1.73 due to packed_simd_2 dependency
-#simply updates dependency to packed_simd 0.3.9
-#subscribed to merge request on github, remove when merged
-[patch.crates-io]
-simba = { git = "https://github.com/dimforge/simba.git", branch = "master" }
+# Utils
+serde = { version = "1", features = ["derive"] }
+ordered-float = "3.7.0"
+itertools = "0.11.0"
+permutation = "0.4.1"
+indicatif = { version = "0.17.5", features = ["rayon"] }
+rayon = "1.8.1"
+csv = "1.2.2"
+wide = "0.7.32"
