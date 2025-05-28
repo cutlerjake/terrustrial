@@ -7,7 +7,6 @@ Turrustrial is an experimental geostats library written entirely in rust with a 
 # Example
 
 ```rust
-    
     // Read point clouds from file.
     let cond = SpatialAcceleratedDB::from_csv_index(FILE_PATH, "X", "Y", "Z", "CU")
             .expect("Failed to create gdb");
@@ -19,7 +18,7 @@ Turrustrial is an experimental geostats library written entirely in rust with a 
     let groups = GroupProvider::optimized_groups(&all_blocks, 5f64, 5f64, 10f64, 2, 2, 2);
 
     // Variogram rotation
-    let vgram_rot = DRotor3::from_euler_angles(0.00.to_radians(), 0.0, 0.0);
+    let vgram_rot = DRotor3::from_euler_angles(0.0, 0.0, 0.0);
 
     // Variogram range
     let range = DVec3::new(100.0, 200.0, 100.0);
