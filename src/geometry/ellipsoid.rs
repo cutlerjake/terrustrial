@@ -1,6 +1,6 @@
 use ultraviolet::DVec3;
 
-use crate::spatial_database::coordinate_system::NewCoordinateSystem;
+use crate::spatial_database::coordinate_system::CoordinateSystem;
 
 use super::aabb::Aabb;
 
@@ -9,7 +9,7 @@ pub struct Ellipsoid {
     pub a: f64,
     pub b: f64,
     pub c: f64,
-    pub coordinate_system: NewCoordinateSystem,
+    pub coordinate_system: CoordinateSystem,
 }
 
 impl Ellipsoid {
@@ -17,7 +17,7 @@ impl Ellipsoid {
     ///  coordinate system defines location and orientation of ellipsoid
     ///      - location is defined by the translation component of the coordinate system
     ///      - orientation is defined by the rotation component of the coordinate system
-    pub fn new(a: f64, b: f64, c: f64, coordinate_system: NewCoordinateSystem) -> Self {
+    pub fn new(a: f64, b: f64, c: f64, coordinate_system: CoordinateSystem) -> Self {
         Self {
             a,
             b,

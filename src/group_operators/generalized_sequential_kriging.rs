@@ -260,7 +260,7 @@ mod test {
 
     use crate::{
         geometry::{aabb::Aabb, support::Support},
-        spatial_database::{coordinate_system::NewCoordinateSystem, DiscretiveVolume},
+        spatial_database::{coordinate_system::CoordinateSystem, DiscretiveVolume},
         systems::solved_systems::{
             ok_system::SolvedLUOKSystemBuilder, sk_system::SolvedLUSKSystemBuilder,
         },
@@ -298,7 +298,7 @@ mod test {
             200f64,
             50f64,
             50f64,
-            NewCoordinateSystem::new(DVec3::zero(), vgram_rot),
+            CoordinateSystem::new(DVec3::zero(), vgram_rot),
         );
 
         println!("Reading Target Data");
@@ -462,7 +462,7 @@ mod test {
             200f64,
             50f64,
             50f64,
-            NewCoordinateSystem::new(DVec3::zero(), vgram_rot),
+            CoordinateSystem::new(DVec3::zero(), vgram_rot),
         );
 
         println!("Reading Target Data");

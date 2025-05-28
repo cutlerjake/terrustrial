@@ -1,12 +1,12 @@
 use ultraviolet::{DIsometry3, DRotor3, DVec3};
 
 #[derive(Clone, Copy, Debug)]
-pub struct NewCoordinateSystem {
+pub struct CoordinateSystem {
     into_local: DIsometry3,
     into_global: DIsometry3,
 }
 
-impl NewCoordinateSystem {
+impl CoordinateSystem {
     pub fn new(origin: DVec3, rotation: DRotor3) -> Self {
         let into_global = DIsometry3::new(origin, rotation);
         let into_local = into_global.inversed();
@@ -158,14 +158,14 @@ mod tests {
     use num_traits::Float;
     use ultraviolet::{DRotor3, DVec3};
 
-    use crate::spatial_database::coordinate_system::NewCoordinateSystem;
+    use crate::spatial_database::coordinate_system::CoordinateSystem;
 
     #[test]
     fn new_cs() {
         let origin = DVec3::new(10.0, 10.0, 10.0);
         let rotation = DRotor3::from_euler_angles(45.0.to_radians(), 0.0, 0.0);
 
-        let mut cs = NewCoordinateSystem::new(DVec3::zero(), rotation);
+        let mut cs = CoordinateSystem::new(DVec3::zero(), rotation);
         cs.set_origin(origin);
 
         let global_point = DVec3::new(11.0, 11.0, 11.0);

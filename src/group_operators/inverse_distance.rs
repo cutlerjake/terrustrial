@@ -2,7 +2,7 @@ use itertools::Itertools;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use ultraviolet::DVec3;
 
-use crate::spatial_database::coordinate_system::NewCoordinateSystem;
+use crate::spatial_database::coordinate_system::CoordinateSystem;
 use crate::spatial_database::group_provider::GroupProvider;
 use crate::{geometry::ellipsoid::Ellipsoid, spatial_database::ConditioningProvider};
 
@@ -12,7 +12,7 @@ use super::ConditioningParams;
 pub fn estimate(
     conditioning_data: &impl ConditioningProvider<Data = f64>,
     conditioning_params: &ConditioningParams,
-    coordinate_system: &NewCoordinateSystem,
+    coordinate_system: &CoordinateSystem,
     scaling: DVec3,
     search_ellipsoid: &Ellipsoid,
     groups: &GroupProvider,
@@ -92,7 +92,7 @@ mod test {
     use crate::{
         geometry::{aabb::Aabb, support::Support},
         spatial_database::{
-            coordinate_system::NewCoordinateSystem, DiscretiveVolume, SpatialAcceleratedDB,
+            coordinate_system::CoordinateSystem, DiscretiveVolume, SpatialAcceleratedDB,
         },
     };
 
@@ -112,7 +112,7 @@ mod test {
             200f64,
             50f64,
             50f64,
-            NewCoordinateSystem::new(DVec3::zero(), rot),
+            CoordinateSystem::new(DVec3::zero(), rot),
         );
 
         println!("Reading Target Data");
@@ -168,7 +168,7 @@ mod test {
         let values = estimate(
             &cond,
             &params,
-            &NewCoordinateSystem::new(DVec3::zero(), DRotor3::identity()),
+            &CoordinateSystem::new(DVec3::zero(), DRotor3::identity()),
             DVec3::new(1.0, 1.0, 1.0),
             &search_ellipsoid,
             &groups,

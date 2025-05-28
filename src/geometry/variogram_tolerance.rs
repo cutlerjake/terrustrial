@@ -1,7 +1,7 @@
 use ultraviolet::{DMat3x4, DVec3, DVec3x4};
 use wide::{f64x4, CmpGe, CmpGt, CmpLe, CmpLt};
 
-use crate::{spatial_database::coordinate_system::NewCoordinateSystem, FORWARD};
+use crate::{spatial_database::coordinate_system::CoordinateSystem, FORWARD};
 
 use super::{aabb::Aabb, elliptical_cylindar::bounding_box_of_oriented_ellipse};
 
@@ -14,7 +14,7 @@ pub struct VariogramTolerance {
     pub b: f64,
     pub b_tol: f64,
     pub b_dist_threshold: f64,
-    pub cs: NewCoordinateSystem,
+    pub cs: CoordinateSystem,
     pub offset: f64,
 }
 
@@ -26,7 +26,7 @@ impl VariogramTolerance {
         a_tol: f64,
         b: f64,
         b_tol: f64,
-        cs: NewCoordinateSystem,
+        cs: CoordinateSystem,
     ) -> Self {
         let a_dist_threshold = a / a_tol.tan();
         let b_dist_threshold = b / b_tol.tan();

@@ -1,6 +1,6 @@
 use crate::{
     geometry::variogram_tolerance::{collect_points, VariogramTolerance},
-    spatial_database::{coordinate_system::NewCoordinateSystem, SpatialAcceleratedDB},
+    spatial_database::{coordinate_system::CoordinateSystem, SpatialAcceleratedDB},
 };
 
 use super::LagBounds;
@@ -59,7 +59,7 @@ impl CPUCalculator {
         let exp_data = runs
             .par_bridge()
             .map(|(index, (orientation, lag_bound))| {
-                let cs = NewCoordinateSystem::new(DVec3::zero(), *orientation);
+                let cs = CoordinateSystem::new(DVec3::zero(), *orientation);
                 let mut tolerance = VariogramTolerance::new(
                     DVec3::zero(),
                     lag_bound.ub - lag_bound.lb,
