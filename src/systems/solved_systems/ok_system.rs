@@ -84,11 +84,11 @@ impl SolvedLUSystem for SolvedLUOKSystem {
         unimplemented!("simulate not implemented for OK system")
     }
 
-    fn weights(&self) -> MatRef<f64> {
+    fn weights(&self) -> MatRef<'_, f64> {
         self.ok_weights.as_ref()
     }
 
-    fn weights_mut(&mut self) -> MatMut<f64> {
+    fn weights_mut(&mut self) -> MatMut<'_, f64> {
         self.ok_weights.as_mut()
     }
 }

@@ -115,11 +115,11 @@ where
             .collect()
     }
 
-    fn weights(&self) -> MatRef<f64> {
+    fn weights(&self) -> MatRef<'_, f64> {
         self.system.weights()
     }
 
-    fn weights_mut(&mut self) -> MatMut<f64> {
+    fn weights_mut(&mut self) -> MatMut<'_, f64> {
         self.system.weights_mut()
     }
 }

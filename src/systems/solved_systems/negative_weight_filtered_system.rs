@@ -135,11 +135,11 @@ where
         self.system.simulate()
     }
 
-    fn weights(&self) -> faer::prelude::MatRef<f64> {
+    fn weights(&self) -> faer::prelude::MatRef<'_, f64> {
         self.system.weights()
     }
 
-    fn weights_mut(&mut self) -> faer::prelude::MatMut<f64> {
+    fn weights_mut(&mut self) -> faer::prelude::MatMut<'_, f64> {
         self.system.weights_mut()
     }
 }

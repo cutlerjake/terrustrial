@@ -53,7 +53,7 @@ impl Aabb {
         let inside = self.contains_point(point);
         let clamped = point.clamped(self.mins(), self.maxs());
 
-        let mult = -1.0 * inside as u8 as f64;
+        let mult = -(inside as u8 as f64);
 
         let delta = point - clamped;
         delta.dot(delta) * mult

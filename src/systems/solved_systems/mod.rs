@@ -27,6 +27,6 @@ pub trait SolvedLUSystem: Clone {
     fn estimate(&self) -> Vec<f64>;
     fn simulate(&self) -> Vec<f64>;
 
-    fn weights(&self) -> MatRef<f64>;
-    fn weights_mut(&mut self) -> MatMut<f64>;
+    fn weights(&self) -> MatRef<'_, f64>;
+    fn weights_mut(&mut self) -> MatMut<'_, f64>;
 }

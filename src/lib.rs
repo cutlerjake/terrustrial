@@ -1,6 +1,5 @@
 use ultraviolet::DVec3;
 
-pub mod declustering;
 pub mod geometry;
 pub mod group_operators;
 pub mod spatial_database;

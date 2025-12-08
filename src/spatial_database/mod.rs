@@ -92,7 +92,7 @@ impl<T> SpatialAcceleratedDB<T> {
         }
     }
 
-    fn _iter_nearest(&self, location: DVec3) -> impl Iterator<Item = NeighboringElement<T>> {
+    fn _iter_nearest(&self, location: DVec3) -> impl Iterator<Item = NeighboringElement<'_, T>> {
         self.tree
             .nearest_neighbor_iter_with_distance_2(&[location.x, location.y, location.z])
             .map(|(sd, sq_dist)| NeighboringElement {
