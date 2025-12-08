@@ -2,6 +2,13 @@
 name = "terrustrial"
 version = "0.1.0"
 edition = "2021"
+description = "A Rust library for geospatial statistics, variograms, and kriging."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/cutlerjake/terrustrial"
+readme = "README.ms"
+categories = ["science", "science::geo", "data-structures", "algorithms"]
+keywords = ["geospatial", "gis", "statistics", "kriging", "variogram"]
+exclude = ["assets/"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [profile.release]
