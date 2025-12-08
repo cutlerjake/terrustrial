@@ -1,3 +1,31 @@
+//! # Generalized Sequential Kriging (GSK)
+//!
+//! This module implements generalized sequential kriging algorithms for spatial estimation and simulation.
+//!
+//! ## Features
+//!
+//! - **estimate**: Parallelized kriging estimation for groups of spatial supports using a composite variogram and configurable system builder.
+//! - **simulate**: Sequential simulation of spatial values along a randomized path, supporting conditioning and spatial constraints.
+//!
+//! ## Usage
+//!
+//! Use `estimate` for batch prediction of values at spatial locations, and `simulate` for generating realizations of spatially correlated random fields.
+//!
+//! ## Dependencies
+//!
+//! - Geometry primitives (e.g., `Ellipsoid`)
+//! - Spatial database and group provider utilities
+//! - Variogram models
+//! - System solvers for kriging
+//!
+//! ## Parallelism
+//!
+//! Estimation and simulation routines leverage Rayon for parallel execution over spatial groups.
+//!
+//! ## Example
+//!
+//! See crate-level documentation for a full example of usage.
+
 use std::ops::Range;
 
 use crate::geometry::ellipsoid::Ellipsoid;
@@ -18,6 +46,15 @@ use ultraviolet::DVec3;
 use crate::group_operators::ConditioningParams;
 use rayon::prelude::*;
 
+/// Estimate values at groups of spatial supports using generalized sequential kriging.
+///
+/// # Arguments
+/// - `conditioning_data`: The conditioning data provider.
+/// - `conditioning_params`: Parameters controlling conditioning data selection.
+/// - `vgram`: The composite variogram model.
+/// - `ellipsoid`: The search ellipsoid for conditioning data.
+/// - `groups`: The group provider containing spatial supports.
+/// - `kriging_type`: The system builder for kriging system.
 pub fn estimate(
     conditioning_data: &impl ConditioningProvider<Data = f64>,
     conditioning_params: &ConditioningParams,
@@ -84,6 +121,16 @@ pub fn estimate(
         .collect::<Vec<f64>>()
 }
 
+/// Simulate values at groups of spatial supports using generalized sequential kriging.
+///
+/// # Arguments
+/// - `conditioning_data`: The conditioning data provider.
+/// - `data_conditioning_params`: Parameters controlling conditioning data selection for hard data.
+/// - `sim_conditioning_params`: Parameters controlling conditioning data selection for previously simulated data.
+/// - `vgram`: The composite variogram model.
+/// - `ellipsoid`: The search ellipsoid for conditioning data.
+/// - `groups`: The group provider containing spatial supports.
+/// - `kriging_type`: The system builder for kriging system.
 pub fn simulate(
     conditioning_data: &impl ConditioningProvider<Data = f64>,
     data_conditioning_params: &ConditioningParams,

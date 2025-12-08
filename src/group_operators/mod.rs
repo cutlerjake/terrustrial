@@ -1,14 +1,58 @@
+//! # Group Operators
+//!
+//! This module provides core geostatistical estimation algorithms for spatial data analysis.
+//!
+//! ## Features
+//!
+//! - **Generalized Sequential Kriging (GSK):** Flexible kriging estimator and simulation routines.
+//! - **Generalized Sequential Indicator Kriging (GSIK):** Indicator-based estimation for categorical or thresholded data.
+//! - **Inverse Distance Estimation (ID):** Fast, simple spatial interpolation using inverse distance weighting.
+//!
+//! ## Types
+//!
+//! - [`ConditioningFilterMap`]: Utility for filtering and clipping conditioning data based on value and distance.
+//! - [`ConditioningParams`]: Parameters for controlling the number and selection of conditioning points.
+//!
+//! ## Usage
+//!
+//! Use the estimation functions from submodules for spatial prediction and simulation. See crate-level docs for examples.
+//!
+//! ## Submodules
+//!
+//! - [`generalized_sequential_kriging`]
+//! - [`generalized_sequential_indicator_kriging`]
+//! - [`inverse_distance`]
+//!
+
 pub mod generalized_sequential_indicator_kriging;
 pub mod generalized_sequential_kriging;
 pub mod inverse_distance;
 
+/// An entry in the conditioning filter map.
+#[derive(Debug, Clone)]
+pub struct ClipEntry {
+    /// Distance threshold for clipping.
+    ///
+    /// If the distance h to the conditioning point exceeds this value,
+    /// the value will be clipped to the specified range.
+    pub h: f64,
+
+    /// Value range for clipping.
+    ///
+    /// Values outside this range will be clipped to the nearest bound
+    /// if the distance exceeds h.
+    pub range: [f64; 2],
+}
+
+/// Parameters for conditioning data selection and filtering.
 #[derive(Debug, Clone)]
 pub struct ConditioningFilterMap {
-    //clips extreme values if h > clip_h
-    pub clip_h: Vec<f64>,
-    pub clip_range: Vec<[f64; 2]>,
+    /// Clips applied to conditioning data based on distance.
+    pub clips: Vec<ClipEntry>,
 
-    //filter values outside of this value range
+    /// Filter values outside of this value range.
+    ///
+    /// All values outside this range will be excluded from conditioning data.
     pub valid_value_range: [f64; 2],
 }
 
@@ -17,13 +61,12 @@ impl ConditioningFilterMap {
         if value < self.valid_value_range[0] || value > self.valid_value_range[1] {
             return None;
         }
-        for (i, clip_h) in self.clip_h.iter().enumerate().rev() {
-            if h > *clip_h {
-                let clip_range = self.clip_range[i];
-                if value < clip_range[0] {
-                    return Some(clip_range[0]);
-                } else if value > clip_range[1] {
-                    return Some(clip_range[1]);
+        for clip in self.clips.iter().rev() {
+            if h > clip.h {
+                if value < clip.range[0] {
+                    return Some(clip.range[0]);
+                } else if value > clip.range[1] {
+                    return Some(clip.range[1]);
                 }
             }
         }
@@ -32,33 +75,38 @@ impl ConditioningFilterMap {
     }
 }
 
+/// Parameters for conditioning data selection and filtering.
+///
+/// These parameters control how many conditioning points are used,
+/// how they are selected, and how extreme values are handled.
 #[derive(Debug, Clone)]
 pub struct ConditioningParams {
-    //number of conditioning points
+    /// Number of conditioning points.
     pub max_n_cond: usize,
     pub min_n_cond: usize,
 
-    //limit on the number of conditioning points per octant
+    /// Limit on the number of conditioning points per octant.
     pub max_octant: usize,
     pub min_conditioned_octants: usize,
 
-    //clips extreme values if h > clip_h
+    /// Clips extreme values if h > clip_h.
     pub clip_h: Vec<f64>,
     pub clip_range: Vec<[f64; 2]>,
 
-    //filter values outside of this value range
+    /// Filter values outside of this value range.
     pub valid_value_range: [f64; 2],
 
-    //limit number of points from same source group
+    /// Limit number of points from same source group.
     pub same_source_group_limit: usize,
 
-    //dynamic orientation for seach ellipsoid
+    /// Dynamic orientation for search ellipsoid.
     pub orient_search: bool,
-    //dynamic orientation for variogram
+    /// Dynamic orientation for variogram.
     pub orient_variogram: bool,
 }
 
 impl ConditioningParams {
+    /// Creates a new [`ConditioningParams`] instance with the specified parameters.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         max_n_cond: usize,

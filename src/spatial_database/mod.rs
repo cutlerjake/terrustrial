@@ -1,3 +1,38 @@
+//! # Spatial Database
+//!
+//! This module provides spatial data structures and utilities for geostatistical analysis.
+//!
+//! ## Features
+//!
+//! - [`SpatialData`]: Represents a spatial support and its index, compatible with R-tree spatial queries.
+//! - R-tree integration for fast spatial indexing and neighborhood queries.
+//! - Submodules for coordinate systems, group providers, and zero-mean transformations.
+//!
+//! ## Usage
+//!
+//! Use `SpatialData` for representing spatial points or blocks, and leverage submodules for advanced spatial grouping and coordinate transformations.
+//!
+//! ## Submodules
+//!
+//! - [`coordinate_system`]: Local/global coordinate system utilities.
+//! - [`group_provider`]: Partitioning supports into spatial groups.
+//! - [`zero_mean`]: Data transformation utilities for zero-mean conditioning.
+//!
+//! ## Example
+//!
+//! ```rust
+//! use terrustrial::spatial_database::SpatialData;
+//! let sd = SpatialData { support, data_idx };
+//! let idx = sd.data_idx();
+//! let s = sd.support();
+//! ```
+//!
+//! ## Dependencies
+//!
+//! - [`rstar`]: For spatial indexing.
+//! - [`Support`]: Geometric primitives for spatial locations.
+//!
+
 use std::{collections::HashMap, error, str::FromStr};
 
 use coordinate_system::octant;
@@ -15,6 +50,7 @@ pub mod coordinate_system;
 pub mod group_provider;
 pub mod zero_mean;
 
+/// Represents spatial data with its support and associated index.
 #[derive(Copy, Clone)]
 pub struct SpatialData {
     pub(crate) support: Support,
@@ -22,10 +58,12 @@ pub struct SpatialData {
 }
 
 impl SpatialData {
+    /// Returns the support associated with this spatial data.
     pub fn support(&self) -> Support {
         self.support
     }
 
+    /// Returns the index associated with this spatial data.
     pub fn data_idx(&self) -> u32 {
         self.data_idx
     }
@@ -58,20 +96,34 @@ impl PointDistance for SpatialData {
     }
 }
 
+/// Represents a neighboring element found in spatial queries.
 pub struct NeighboringElement<'a, T> {
+    /// The index of the neighboring element.
     pub idx: u32,
+    /// A reference to the data associated with the neighboring element.
     pub data: &'a T,
+    /// The support of the neighboring element.
     pub support: Support,
+    /// The squared distance to the neighboring element.
     pub sq_dist: f64,
 }
+
+/// A spatially accelerated database for efficient nearest neighbor queries.
+///
+/// # Type Parameters
+/// - `T`: The type of data associated with each spatial support.
 #[derive(Clone)]
 pub struct SpatialAcceleratedDB<T> {
+    /// The R-tree spatial index for fast querying.
     pub tree: RTree<SpatialData>,
+    /// The list of spatial supports.
     pub supports: Vec<Support>,
+    /// The list of data associated with each support.
     pub data: Vec<T>,
 }
 
 impl<T> SpatialAcceleratedDB<T> {
+    /// Creates a new `SpatialAcceleratedDB` from the given supports and data.
     pub fn new(supports: Vec<Support>, data: Vec<T>) -> Self {
         let spatial_data = supports
             .clone()

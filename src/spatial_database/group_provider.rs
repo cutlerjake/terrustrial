@@ -1,3 +1,30 @@
+//! # Group Provider
+//!
+//! This module provides utilities for grouping spatial supports into regular 3D blocks for efficient spatial analysis.
+//!
+//! ## Features
+//!
+//! - [`GroupProvider`]: Organizes supports into spatial groups using a grid-based partitioning scheme.
+//!     - Optimizes grouping for parallel kriging and simulation.
+//!     - Tracks original and group indices for mapping results.
+//! - Efficient spatial queries using R-tree acceleration.
+//!
+//! ## Usage
+//!
+//! Use `GroupProvider::optimized_groups` to partition supports into groups based on grid dimensions and spacing. This enables batch processing and spatial locality for geostatistical algorithms.
+//!
+//! ## Example
+//!
+//! ```rust
+//! let groups = GroupProvider::optimized_groups(&supports, dx, dy, dz, gx, gy, gz);
+//! ```
+//!
+//! ## Dependencies
+//!
+//! - [`rstar`]: For spatial indexing and queries.
+//! - [`Support`]: Geometric primitives representing spatial locations.
+//!
+
 use std::ops::Range;
 
 use rstar::{RTree, RTreeObject, AABB};
@@ -6,6 +33,10 @@ use crate::geometry::support::Support;
 
 use super::SpatialData;
 
+/// Provides grouped spatial supports for batch processing.
+///
+/// Each group contains a set of supports organized in a regular 3D grid.
+#[derive(Debug, Clone)]
 pub struct GroupProvider {
     supports: Vec<Support>,
     original_idxs: Vec<usize>,
@@ -13,6 +44,16 @@ pub struct GroupProvider {
 }
 
 impl GroupProvider {
+    /// Creates optimized groups of supports based on specified grid dimensions and spacing.
+    ///
+    /// # Arguments
+    /// - `supports`: The list of spatial supports to be grouped.
+    /// - `dx`: Grid spacing in the x-direction.
+    /// - `dy`: Grid spacing in the y-direction.  
+    /// - `dz`: Grid spacing in the z-direction.
+    /// - `gx`: Number of supports per group in the x-direction.
+    /// - `gy`: Number of supports per group in the y-direction.
+    /// - `gz`: Number of supports per group in the z-direction.
     pub fn optimized_groups(
         supports: &[Support],
         dx: f64,
@@ -102,21 +143,25 @@ impl GroupProvider {
         }
     }
 
+    /// Returns a slice of all supports in the group provider.
     #[inline(always)]
     pub fn get_supports(&self) -> &[Support] {
         &self.supports
     }
 
+    /// Returns the total number of supports (nodes) in the group provider.
     #[inline(always)]
     pub fn n_nodes(&self) -> usize {
         self.supports.len()
     }
 
+    /// Returns the total number of groups in the group provider.
     #[inline(always)]
     pub fn n_groups(&self) -> usize {
         self.group_idxs.len().saturating_sub(1)
     }
 
+    /// Returns the range of indices for the supports in the specified group.
     #[inline(always)]
     #[track_caller]
     pub fn get_group_range(&self, group: usize) -> Range<usize> {
@@ -125,18 +170,21 @@ impl GroupProvider {
         low..high
     }
 
+    /// Returns a slice of supports in the specified group.
     #[inline(always)]
     #[track_caller]
     pub fn get_group(&self, group: usize) -> &[Support] {
         &self.supports[self.get_group_range(group)]
     }
 
+    /// Returns a slice of original indices for the supports in the specified group.
     #[inline(always)]
     #[track_caller]
     pub fn get_original_idxs(&self, group: usize) -> &[usize] {
         &self.original_idxs[self.get_group_range(group)]
     }
 
+    /// Returns the maximum size (number of supports) among all groups.
     #[inline(always)]
     pub fn max_group_size(&self) -> usize {
         self.group_idxs
