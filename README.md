@@ -7,7 +7,7 @@ Turrustrial is an experimental geostats library written entirely in rust with a 
 # Example
 
 ```rust
-    // Read point clouds from file.
+    // Read point cloud from file.
     let cond = SpatialAcceleratedDB::from_csv_index(FILE_PATH, "X", "Y", "Z", "CU")
             .expect("Failed to create gdb");
 
