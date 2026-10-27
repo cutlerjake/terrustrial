@@ -1,4 +1,25 @@
-/target
-/Cargo.lock
-/data
-/test_results
+# Build output
+/target/
+
+# Benchmark runs written by scripts/benchmark_windows.ps1 and the examples
+/benchmark-results/
+/data/
+/test_results/
+/qs_*.csv
+
+# SQLite stores and checkpoints written by the sqlite feature
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+
+# Local notes
+/UPDATE-NOTES.md
+
+# Editors and operating systems
+/.vscode/
+/.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db

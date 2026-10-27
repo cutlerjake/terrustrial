@@ -1,44 +1,50 @@
 [package]
 name = "terrustrial"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
-description = "A Rust library for geospatial statistics, variograms, and kriging."
+description = "Geostatistics in Rust: joint kriging and simulation with explicit resource and numerical contracts, plus Quick Sampling multiple-point simulation"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/cutlerjake/terrustrial"
 readme = "README.md"
-categories = ["science", "science::geo", "data-structures", "algorithms"]
-keywords = ["geospatial", "gis", "statistics", "kriging", "variogram"]
-exclude = ["assets/", ".vscode/"]
+categories = ["science", "science::geo", "algorithms", "mathematics"]
+keywords = ["geostatistics", "kriging", "variogram", "simulation", "geospatial"]
+exclude = [
+    "/assets/",
+    "/benchmark-results/",
+    "/crates/",
+    "/scripts/",
+    "/UPDATE-NOTES.md",
+    "*.sqlite",
+    "*.sqlite-wal",
+    "*.sqlite-shm",
+    "*.sqlite-journal",
+]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [profile.release]
 debug = true
 lto = "fat"
 incremental = true
 
-
+# Every feature forwards to terrustrial-core; this crate adds no code behind them.
 [features]
-# default = ["simba", "simba/wide"]
-# portable_simd = ["simba", "simba/portable_simd"]
+default = []
+sqlite = ["terrustrial-core/sqlite"]
+fft = ["terrustrial-core/fft"]
+gpu = ["terrustrial-core/gpu"]
+mi-allocator = ["terrustrial-core/mi-allocator"]
+profiling = ["terrustrial-core/profiling"]
+experimental-two-phase = ["terrustrial-core/experimental-two-phase"]
 
 [dependencies]
-# Linalg
-faer = "0.22.6"
-dyn-stack = "0.13.0"
+terrustrial-core = { version = "0.2.0", path = "crates/terrustrial-core" }
 
-# Math
-rstar = { version = "0.12.0", features = ["serde"] }
-rand = "0.8.5"
-rand_distr = "0.4.3"
-num-traits = "0.2.15"
-ultraviolet = { version = "0.10.0", features = ["f64", "mint"] }
+# Quick Sampling (the qs module)
+rand = "0.10.3"
+rayon = "1.12.0"
+rustfft = "6.4.1"
+realfft = "3.5.0"
+num-complex = "0.4.6"
 
-# Utils
-serde = { version = "1", features = ["derive"] }
-ordered-float = "3.7.0"
-itertools = "0.11.0"
-permutation = "0.4.1"
-indicatif = { version = "0.17.5", features = ["rayon"] }
-rayon = "1.8.1"
-csv = "1.2.2"
-wide = "0.7.32"
+[workspace]
+members = ["crates/terrustrial-core"]
+resolver = "2"
