@@ -6,7 +6,9 @@ Joint geostatistical modeling with explicit resource and numerical contracts.
 [terrustrial](https://github.com/cutlerjake/terrustrial) workspace. It replaces
 the original `terrustrial` 0.1 design rather than extending it: the legacy
 algorithms are not dependencies, and the API is new. The crate forbids
-`unsafe` code.
+`unsafe` code. The `terrustrial` crate re-exports every module of this one
+under `terrustrial::`, forwards the same feature flags, and adds Quick
+Sampling multiple-point simulation.
 
 Every driver takes validated inputs, a joint covariance model, a memory budget
 and a cancellation token, and reports numerical trouble as an error value

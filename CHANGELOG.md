@@ -18,22 +18,22 @@ Breaking release. The repository becomes a workspace with two crates:
   realization, item and purpose, and numerical failures are returned as
   errors. Optional features: `sqlite`, `fft`, `gpu`, `mi-allocator`,
   `profiling` and `experimental-two-phase`. The crate forbids `unsafe` code.
-- `terrustrial` 0.2.0, the root crate, keeps the 0.1 modules (`geometry`,
-  `group_operators`, `spatial_database`, `systems`, `variography`) with small
-  internal changes, depends on `terrustrial-core`, and adds the `qs` module:
-  Quick Sampling multiple-point simulation (Gravey and Mariethoz 2020) for
-  continuous, categorical and multivariate attributes on regular 3D grids.
-  The `prelude::re_exports` module now re-exports
-  `terrustrial_core::spatial::hierarchy` instead of `rstar`, and the spatial
-  database no longer depends on `rstar`. Dependencies were updated (`faer`
-  0.24, `rand` 0.10, `rand_distr` 0.6, `itertools` 0.15, `ordered-float` 5,
-  `indicatif` 0.18) and `rustfft`, `realfft` and `num-complex` were added for
-  Quick Sampling.
-- Comparison examples and tests for the legacy and core drivers
-  (`examples/parallel_estimation_comparison.rs`,
-  `examples/parallel_simulation_comparison.rs`, `examples/rewrite_baseline.rs`,
-  `tests/kriging_reference.rs`, `tests/spatial_hierarchy_migration.rs`) and a
-  Windows scaling benchmark runner (`scripts/benchmark_windows.ps1`).
+- `terrustrial` 0.2.0, the root crate, is a facade: `pub use
+  terrustrial_core::*`, features `sqlite`, `fft`, `gpu`, `mi-allocator`,
+  `profiling` and `experimental-two-phase` forwarded to the core, plus the new
+  `qs` module: Quick Sampling multiple-point simulation (Gravey and Mariethoz
+  2020) for continuous, categorical and multivariate attributes on regular 3D
+  grids, with the `qs_demo` and `strebelle_bench` examples.
+- Removed: the 0.1 modules `geometry`, `group_operators`,
+  `spatial_database`, `systems` and `variography`, the `prelude`, the
+  `FORWARD`, `RIGHT` and `UP` constants, and the dependencies they carried
+  (`faer`, `dyn-stack`, `rstar`, `rand_distr`, `num-traits`, `ultraviolet`,
+  `serde`, `ordered-float`, `itertools`, `permutation`, `indicatif`, `csv`,
+  `wide`). The root crate now depends on `terrustrial-core`, `rand`, `rayon`,
+  `rustfft`, `realfft` and `num-complex`. The README maps the 0.1 types to
+  their 0.2 replacements; indicator kriging and inverse distance have none.
+- `scripts/benchmark_windows.ps1`, the Windows scaling benchmark runner for
+  the core's `storage_comparison` example.
 - License files renamed to `LICENSE-MIT` and `LICENSE-APACHE`; the license
   itself is unchanged (MIT OR Apache-2.0).
 

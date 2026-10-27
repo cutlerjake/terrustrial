@@ -3,18 +3,19 @@
 Geostatistics in Rust: joint kriging and sequential Gaussian simulation with
 explicit resource and numerical contracts.
 
-Version 0.2 is a rewrite. The engine lives in a new crate, `terrustrial-core`,
-whose API has nothing in common with 0.1. The root crate, `terrustrial`, keeps
-the original 0.1 estimation API and adds Quick Sampling. If you depend on
-`terrustrial` 0.1, read the migration note at the end.
+Version 0.2 is a rewrite. The engine lives in `terrustrial-core`, whose API
+has nothing in common with 0.1. The `terrustrial` crate is a facade over it:
+it re-exports every module of the core, forwards its feature flags, and adds
+the `qs` Quick Sampling module. The 0.1 API is gone; the migration note at
+the end maps its types to their replacements.
 
 ## Workspace layout
 
 | Path | Crate | Contents |
 | --- | --- | --- |
 | `crates/terrustrial-core/` | `terrustrial-core` 0.2.0 | The joint estimation and simulation engine: validated data types, linear model of coregionalization, joint Gaussian prediction, ordered parallel estimation and pipelined simulation drivers, neighborhood selection, persistent stores, variography and fitting, transforms, nonstationary covariance, domain evidence, high-order statistics and multiple-point pattern sampling. Forbids `unsafe` code. |
-| `src/` | `terrustrial` 0.2.0 | The 0.1 modules (`geometry`, `group_operators`, `spatial_database`, `systems`, `variography`) with small internal changes, plus the new `qs` module: Quick Sampling multiple-point simulation on regular 3D grids (Gravey and Mariethoz 2020) for continuous, categorical and multivariate attributes. Depends on `terrustrial-core`. |
-| `examples/`, `tests/` | root crate | The legacy drivers next to the core drivers on matched workloads (`parallel_estimation_comparison`, `parallel_simulation_comparison`, `rewrite_baseline`), Quick Sampling demos, and independent kriging oracles. |
+| `src/` | `terrustrial` 0.2.0 | `pub use terrustrial_core::*` plus `qs`: Quick Sampling multiple-point simulation on regular 3D grids (Gravey and Mariethoz 2020) for continuous, categorical and multivariate attributes. |
+| `examples/` | `terrustrial` | `qs_demo` and `strebelle_bench`, the Quick Sampling demos. |
 | `crates/terrustrial-core/examples/`, `crates/terrustrial-core/tests/` | `terrustrial-core` | Benchmarks and diagnostics for every subsystem, and the integration tests that check each driver against an independent oracle. |
 | `scripts/benchmark_windows.ps1` | | Windows scaling runner: focused correctness tests, then estimation and simulation sweeps over worker counts for resident and packed storage, written to `benchmark-results/<timestamp>/`. |
 
@@ -22,34 +23,34 @@ the original 0.1 estimation API and adds Quick Sampling. If you depend on
 
 ```toml
 [dependencies]
-terrustrial-core = "0.2"
+terrustrial = { version = "0.2", features = ["sqlite"] }
 ```
 
-Add `terrustrial = "0.2"` instead, or as well, for the 0.1 API and Quick
-Sampling. The default feature set of `terrustrial-core` is empty; see the
-feature table below.
+Depending on `terrustrial-core` directly gives the same modules under the
+`terrustrial_core::` path without Quick Sampling. The default feature set is
+empty; see the feature table below.
 
 ## Example
 
-Ordinary kriging of one variable at two targets from four point observations
-with `terrustrial-core`. The prepared `GaussianPlan` can be reused for repeated
-prediction, and the joint prediction-error covariance is retained because it
-was requested. The same program is the crate-level doc test of
-`terrustrial-core`.
+Ordinary kriging of one variable at two targets from four point observations.
+The prepared `GaussianPlan` can be reused for repeated prediction, and the
+joint prediction-error covariance is retained because it was requested. This
+program is the root crate's doc test; the same program under
+`terrustrial_core::` paths is the doc test of `terrustrial-core`.
 
 ```rust
-use terrustrial_core::{
+use terrustrial::{
     data::{Observation, Point3, Site},
     execution::{Cancellation, MemoryBudget},
     gaussian::{GaussianPlan, NumericalTolerance, Ordinary, PrepareOptions, Uncertainty},
     model::{Anisotropy, Coregionalization, Correlation, Lmc, Structure},
 };
 
-fn site(x: f64, y: f64) -> terrustrial_core::Result<Site> {
+fn site(x: f64, y: f64) -> terrustrial::Result<Site> {
     Ok(Site::point(Point3::new([x, y, 0.0])?, 0))
 }
 
-fn main() -> terrustrial_core::Result<()> {
+fn main() -> terrustrial::Result<()> {
     // One exponential structure with a 25 m scale and unit sill for one variable.
     let model = Lmc::new(vec![Structure {
         correlation: Correlation::Exponential,
@@ -141,7 +142,10 @@ partial output. `simulate_checkpointed_identified` derives the checkpoint
 identity from the model, data, path, seed and options through the `identity`
 module before starting or resuming.
 
-## Feature flags of terrustrial-core
+## Feature flags
+
+Each feature of `terrustrial` forwards to the feature of the same name in
+`terrustrial-core`.
 
 | Feature | Pulls in | Enables |
 | --- | --- | --- |
@@ -152,7 +156,16 @@ module before starting or resuming.
 | `profiling` | nothing | Aggregate timing diagnostics in `execution::profiling`. |
 | `experimental-two-phase` | nothing | An experimental all-plan simulation benchmark path with no streaming or plan persistence. |
 
-The root crate has no feature flags.
+## Quick Sampling
+
+`terrustrial::qs` is an FFT-accelerated Direct Sampling implementation for
+regular 3D grids: `simulate_continuous`, `simulate_categorical` and
+`simulate_multivariate` take a `Grid3` training image, `HardSample`
+conditioning data, a `QsTemplate` and `QsParams`. The simulation grid need not
+match the training image's shape, only its cell topology. The examples read
+their inputs from paths given by `QS_DATA` (`qs_demo`, a drill-hole style
+dataset) and `STREB_TI` (`strebelle_bench`, the Strebelle channel training
+image); neither dataset is in the repository.
 
 ## Building
 
@@ -185,15 +198,20 @@ wraps this into a full scaling sweep.
 
 ## Migration from 0.1
 
-- `terrustrial-core` is a new API. There is no mechanical translation from the
-  0.1 calls; `examples/parallel_estimation_comparison.rs` and
-  `examples/parallel_simulation_comparison.rs` show the same workload written
-  against both.
-- The 0.1 modules are still in the root crate, so existing code keeps its
-  imports. The changes are listed in `CHANGELOG.md`; the one visible in
-  `prelude::re_exports` is that `rstar` is no longer re-exported.
-- The last release of the original design is tagged `v0.1.1` and remains on
-  crates.io.
+The 0.1 modules (`geometry`, `group_operators`, `spatial_database`, `systems`,
+`variography`) are not in 0.2, and nothing in 0.2 is source-compatible with
+them. The last release of the original design is tagged `v0.1.1` and stays on
+crates.io. Where the 0.1 concepts went:
+
+| 0.1 | 0.2 |
+| --- | --- |
+| `SpatialAcceleratedDB` with `Support` values | `data::Observation` (id, `data::Site`, value, noise variance) in any `spatial::ObservationSource`: a slice, `spatial::SpatialIndex`, or a `storage` adapter |
+| `GroupProvider::optimized_groups` | `data::Group` of `data::Target`, built by the caller |
+| `CompositeVariogram` of `SphericalVariogram`, `ExponentialVariogram`, ... | `model::Lmc` of `model::Structure` (`Correlation`, `Anisotropy`, `Coregionalization`) |
+| `Ellipsoid` search with `ConditioningParams` | `spatial::Neighborhood` (maximum count, radius) and the per-variable quotas in `spatial::search` |
+| `generalized_sequential_kriging::estimate` with `SolvedLUOKSystemBuilder` or `SolvedLUSKSystemBuilder` | `estimation::estimate_groups` with `gaussian::Ordinary` or `gaussian::Simple`, or `gaussian::GaussianPlan` for a single system |
+| `generalized_sequential_kriging::simulate` | `simulation::simulate_groups` or `simulation::simulate_pipelined` |
+| `generalized_sequential_indicator_kriging`, `inverse_distance` | no replacement |
 
 ## License
 
