@@ -11,7 +11,7 @@ use crate::group_operators::ConditioningParams;
 
 /// The cpdf associated with the indicator kriging estimates.
 ///
-/// p[i] is the probability that the value is less than x[i].
+/// `p[i]` is the probability that the value is less than `x[i]`.
 /// The raw pdf may not be valid, (negative kriging weights, poorly modeled variograms, lack of data, etc..).
 /// A correction method is provided, which uses a two-pass averaging method to ensure valid order relations.
 #[derive(Clone, Debug, Default)]

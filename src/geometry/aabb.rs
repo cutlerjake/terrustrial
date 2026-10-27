@@ -50,13 +50,9 @@ impl Aabb {
 
     #[inline(always)]
     pub fn distance_to_point_squared(&self, point: DVec3) -> f64 {
-        let inside = self.contains_point(point);
         let clamped = point.clamped(self.mins(), self.maxs());
-
-        let mult = -(inside as u8 as f64);
-
         let delta = point - clamped;
-        delta.dot(delta) * mult
+        delta.dot(delta)
     }
 
     #[inline(always)]

@@ -4,8 +4,8 @@
 //!
 //! ## Features
 //!
-//! - [`SpatialData`]: Represents a spatial support and its index, compatible with R-tree spatial queries.
-//! - R-tree integration for fast spatial indexing and neighborhood queries.
+//! - [`SpatialData`]: Represents a spatial support and its index, compatible with packed hierarchy spatial queries.
+//! - packed hierarchy integration for fast spatial indexing and neighborhood queries.
 //! - Submodules for coordinate systems, group providers, and zero-mean transformations.
 //!
 //! ## Usage
@@ -21,15 +21,19 @@
 //! ## Example
 //!
 //! ```rust
-//! use terrustrial::spatial_database::SpatialData;
-//! let sd = SpatialData { support, data_idx };
-//! let idx = sd.data_idx();
-//! let s = sd.support();
+//! use terrustrial::{geometry::support::Support, spatial_database::SpatialAcceleratedDB};
+//! use ultraviolet::DVec3;
+//! let db = SpatialAcceleratedDB::new(
+//!     vec![Support::Point(DVec3::zero())], vec![1.0],
+//! );
+//! let sample = db.tree.iter().next().unwrap();
+//! assert_eq!(sample.data_idx(), 0);
+//! assert_eq!(sample.support().center(), DVec3::zero());
 //! ```
 //!
 //! ## Dependencies
 //!
-//! - [`rstar`]: For spatial indexing.
+//! - [`terrustrial_core::spatial::hierarchy`]: For spatial indexing.
 //! - [`Support`]: Geometric primitives for spatial locations.
 //!
 
@@ -38,7 +42,7 @@ use std::{collections::HashMap, error, str::FromStr};
 use coordinate_system::octant;
 use ordered_float::OrderedFloat;
 use permutation::Permutation;
-use rstar::{PointDistance, RTree, RTreeObject, AABB};
+use terrustrial_core::spatial::hierarchy::{Bounded, Bounds, Hierarchy, PointDistance};
 use ultraviolet::DVec3;
 
 use crate::{
@@ -69,10 +73,8 @@ impl SpatialData {
     }
 }
 
-impl RTreeObject for SpatialData {
-    type Envelope = AABB<[f64; 3]>;
-
-    fn envelope(&self) -> Self::Envelope {
+impl Bounded for SpatialData {
+    fn bounds(&self) -> Bounds {
         let (mins, maxs) = match &self.support {
             Support::Point(p) => (*p, *p),
             Support::Aabb { aabb, disc: _ } => {
@@ -83,16 +85,13 @@ impl RTreeObject for SpatialData {
             }
         };
 
-        AABB::from_corners(*mins.as_array(), *maxs.as_array())
+        Bounds::from_corners(*mins.as_array(), *maxs.as_array())
     }
 }
 
 impl PointDistance for SpatialData {
-    fn distance_2(
-        &self,
-        point: &<Self::Envelope as rstar::Envelope>::Point,
-    ) -> <<Self::Envelope as rstar::Envelope>::Point as rstar::Point>::Scalar {
-        self.support.sq_dist_to_point(DVec3::from(*point))
+    fn distance_squared(&self, point: [f64; 3]) -> f64 {
+        self.support.sq_dist_to_point(DVec3::from(point))
     }
 }
 
@@ -114,8 +113,8 @@ pub struct NeighboringElement<'a, T> {
 /// - `T`: The type of data associated with each spatial support.
 #[derive(Clone)]
 pub struct SpatialAcceleratedDB<T> {
-    /// The R-tree spatial index for fast querying.
-    pub tree: RTree<SpatialData>,
+    /// The packed hierarchy spatial index for fast querying.
+    pub tree: Hierarchy<SpatialData>,
     /// The list of spatial supports.
     pub supports: Vec<Support>,
     /// The list of data associated with each support.
@@ -135,7 +134,7 @@ impl<T> SpatialAcceleratedDB<T> {
             })
             .collect::<Vec<_>>();
 
-        let tree = RTree::bulk_load(spatial_data);
+        let tree = Hierarchy::new(spatial_data).expect("valid spatial bounds and available memory");
 
         Self {
             tree,
@@ -146,7 +145,7 @@ impl<T> SpatialAcceleratedDB<T> {
 
     fn _iter_nearest(&self, location: DVec3) -> impl Iterator<Item = NeighboringElement<'_, T>> {
         self.tree
-            .nearest_neighbor_iter_with_distance_2(&[location.x, location.y, location.z])
+            .nearest_iter([location.x, location.y, location.z])
             .map(|(sd, sq_dist)| NeighboringElement {
                 idx: sd.data_idx,
                 data: &self.data[sd.data_idx as usize],

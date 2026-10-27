@@ -7,7 +7,7 @@ use super::LagBounds;
 
 use itertools::{izip, Itertools};
 use rayon::iter::{ParallelBridge, ParallelIterator};
-use rstar::AABB;
+use terrustrial_core::spatial::hierarchy::Bounds;
 use ultraviolet::{DRotor3, DVec3};
 
 #[derive(Clone)]
@@ -85,7 +85,7 @@ impl CPUCalculator {
 
                     //query for points within tolerance
                     let bounding_box = tolerance.loose_aabb();
-                    let rtree_box = AABB::from_corners(
+                    let rtree_box = Bounds::from_corners(
                         [
                             bounding_box.mins().x,
                             bounding_box.mins().y,
@@ -101,7 +101,7 @@ impl CPUCalculator {
                     let (points, vals) = self
                         .data
                         .tree
-                        .locate_in_envelope_intersecting(&rtree_box)
+                        .query(rtree_box)
                         .filter_map(|pair_data: &crate::spatial_database::SpatialData| {
                             let pair_point = pair_data.support().center();
                             let pair_ind = pair_data.data_idx();

@@ -21,9 +21,11 @@
 //!
 //! ```rust
 //! use terrustrial::spatial_database::coordinate_system::*;
+//! use ultraviolet::{DRotor3, DVec3};
 //! let origin = DVec3::zero();
 //! let rotation = DRotor3::from_euler_angles(0.0, 0.0, 0.0);
 //! let cs = CoordinateSystem::new(origin, rotation);
+//! assert_eq!(cs.into_local().transform_vec(origin), DVec3::zero());
 //! ```
 
 use ultraviolet::{DIsometry3, DRotor3, DVec3};

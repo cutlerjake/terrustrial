@@ -141,7 +141,7 @@ pub fn simulate(
     kriging_type: impl SolvedSystemBuilder,
 ) -> Vec<f64> {
     // 1. Create a randomized simulation path.
-    let mut rng = StdRng::from_entropy();
+    let mut rng = StdRng::from_rng(&mut rand::rng());
     let mut simulation_path = (0..groups.n_groups()).collect::<Vec<_>>();
     simulation_path.shuffle(&mut rng);
 

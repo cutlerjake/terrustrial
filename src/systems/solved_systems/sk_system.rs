@@ -7,7 +7,7 @@ use faer::{
     },
     Accum, Mat, MatMut, MatRef, Par,
 };
-use rand::{rngs::StdRng, Rng};
+use rand::{rngs::StdRng, RngExt};
 use rand_distr::StandardNormal;
 
 use crate::systems::lu::LUSystem;

@@ -29,8 +29,8 @@ where
     /// 1996,
     /// Pages 765-773,
     /// ISSN 0098-3004,
-    /// https://doi.org/10.1016/0098-3004(96)00005-2.
-    /// (https://www.sciencedirect.com/science/article/pii/0098300496000052)
+    /// <https://doi.org/10.1016/0098-3004(96)00005-2>
+    /// (<https://www.sciencedirect.com/science/article/pii/0098300496000052>)
     fn build(&self, lu_system: &mut LUSystem) -> Result<Self::SolvedSystem, Self::Error> {
         // 1. Determine estimation node - data covariance values
         // 2. Compute weights

@@ -14,7 +14,7 @@ use faer::{
     },
     Accum, Mat, Par, Spec,
 };
-use rand::{rngs::StdRng, Rng};
+use rand::{rngs::StdRng, RngExt};
 use rand_distr::StandardNormal;
 use ultraviolet::DVec3;
 

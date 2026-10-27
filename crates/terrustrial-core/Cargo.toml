@@ -1,0 +1,81 @@
+[package]
+name = "terrustrial-core"
+version = "0.2.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Joint geostatistical modeling with explicit resource and numerical contracts"
+repository = "https://github.com/cutlerjake/terrustrial"
+readme = "README.md"
+keywords = ["geostatistics", "kriging", "cokriging", "simulation", "variogram"]
+categories = ["science", "science::geo", "algorithms", "mathematics"]
+
+[features]
+default = []
+# Optional allocator for storage_comparison only; the library sets no global allocator.
+mi-allocator = ["dep:mimalloc"]
+# Local aggregate timing diagnostics; disabled in normal builds.
+profiling = []
+# Experimental all-plan simulation benchmark; no streaming or plan persistence.
+experimental-two-phase = []
+sqlite = ["dep:rusqlite"]
+fft = ["dep:rustfft", "dep:concrete-ntt"]
+gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
+
+[dependencies]
+mimalloc = { version = "=0.1.52", optional = true, default-features = false }
+faer = "0.24.4"
+fearless_simd = "1.0.0"
+fearless_simd_macros = "0.1.0"
+dyn-stack = "0.13.2"
+rand = "0.10.3"
+rand_chacha = "0.10.0"
+rand_distr = "0.6.0"
+rayon = "1.12.0"
+foldhash = "0.2.0"
+csv = "1.4.0"
+crc32fast = "1.5.2"
+blake3 = "1.8.7"
+tempfile = "3.27.0"
+statrs = { version = "0.19.1", default-features = false }
+rusqlite = { version = "0.40.2", features = ["bundled"], optional = true }
+rustfft = { version = "6.4.1", optional = true }
+concrete-ntt = { version = "0.2.0", optional = true }
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl", "vulkan", "metal", "dx12"], optional = true }
+pollster = { version = "1.0.1", optional = true }
+bytemuck = { version = "1.25.2", optional = true }
+
+[[example]]
+name = "storage_benchmark"
+required-features = ["sqlite"]
+
+[[example]]
+name = "mps_benchmark"
+required-features = ["fft"]
+
+[[example]]
+name = "neighborhood_benchmark"
+required-features = ["sqlite"]
+
+[dev-dependencies]
+allocation-counter = "0.8.1"
+serde_json = "1.0.151"
+
+[[example]]
+name = "sqlite_parallel_benchmark"
+required-features = ["sqlite"]
+
+[[example]]
+name = "disk_variography"
+required-features = ["sqlite"]
+
+[[example]]
+name = "grid_mask_counts"
+required-features = ["fft"]
+
+[[example]]
+name = "grid_spectral"
+required-features = ["fft"]
+
+[[example]]
+name = "storage_comparison"
+required-features = ["sqlite"]

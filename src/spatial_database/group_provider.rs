@@ -7,7 +7,7 @@
 //! - [`GroupProvider`]: Organizes supports into spatial groups using a grid-based partitioning scheme.
 //!     - Optimizes grouping for parallel kriging and simulation.
 //!     - Tracks original and group indices for mapping results.
-//! - Efficient spatial queries using R-tree acceleration.
+//! - Efficient spatial queries using packed hierarchy acceleration.
 //!
 //! ## Usage
 //!
@@ -16,18 +16,26 @@
 //! ## Example
 //!
 //! ```rust
-//! let groups = GroupProvider::optimized_groups(&supports, dx, dy, dz, gx, gy, gz);
+//! use terrustrial::{geometry::support::Support, spatial_database::group_provider::GroupProvider};
+//! use ultraviolet::DVec3;
+//! let supports = vec![
+//!     Support::Point(DVec3::zero()),
+//!     Support::Point(DVec3::new(1.0, 0.0, 0.0)),
+//! ];
+//! let groups = GroupProvider::optimized_groups(&supports, 1.0, 1.0, 1.0, 2, 1, 1);
+//! assert_eq!(groups.n_nodes(), 2);
+//! assert_eq!(groups.n_groups(), 1);
 //! ```
 //!
 //! ## Dependencies
 //!
-//! - [`rstar`]: For spatial indexing and queries.
+//! - [`terrustrial_core::spatial::hierarchy`]: For spatial indexing and queries.
 //! - [`Support`]: Geometric primitives representing spatial locations.
 //!
 
 use std::ops::Range;
 
-use rstar::{RTree, RTreeObject, AABB};
+use terrustrial_core::spatial::hierarchy::{Bounded, Bounds, Hierarchy};
 
 use crate::geometry::support::Support;
 
@@ -63,7 +71,7 @@ impl GroupProvider {
         gy: usize,
         gz: usize,
     ) -> Self {
-        let mut target_point_tree = RTree::bulk_load(
+        let target_point_tree = Hierarchy::new(
             supports
                 .iter()
                 .copied()
@@ -73,9 +81,16 @@ impl GroupProvider {
                     data_idx: i as u32,
                 })
                 .collect(),
-        );
-
-        let bounds = target_point_tree.root().envelope();
+        )
+        .expect("valid target bounds and available memory");
+        let Some(bounds) = target_point_tree.bounds() else {
+            return Self {
+                supports: vec![],
+                original_idxs: vec![],
+                group_idxs: vec![0],
+            };
+        };
+        let mut claimed = vec![false; supports.len()];
 
         let group_size = [gx, gy, gz];
         let env_size = [
@@ -85,28 +100,33 @@ impl GroupProvider {
         ];
         let mut groups = Vec::new();
         let mut original_idxs = Vec::new();
-        let mut x = bounds.lower()[0];
-        while x <= bounds.upper()[0] {
-            let mut y = bounds.lower()[1];
-            while y <= bounds.upper()[1] {
-                let mut z = bounds.lower()[2];
-                while z <= bounds.upper()[2] {
-                    let envelope = AABB::from_corners(
+        let mut x = bounds.lower[0];
+        while x <= bounds.upper[0] {
+            let mut y = bounds.lower[1];
+            while y <= bounds.upper[1] {
+                let mut z = bounds.lower[2];
+                while z <= bounds.upper[2] {
+                    let envelope = Bounds::from_corners(
                         [x, y, z],
                         [x + env_size[0], y + env_size[1], z + env_size[2]],
                     );
 
                     let mut points = target_point_tree
-                        .drain_in_envelope_intersecting(envelope)
+                        .query(envelope)
+                        .filter(|entry| {
+                            let i = entry.data_idx as usize;
+                            if claimed[i] {
+                                false
+                            } else {
+                                claimed[i] = true;
+                                true
+                            }
+                        })
+                        .copied()
                         .collect::<Vec<_>>();
 
                     //sort points by x, y, z
-                    points.sort_by(|a, b| {
-                        a.envelope()
-                            .lower()
-                            .partial_cmp(&b.envelope().lower())
-                            .unwrap()
-                    });
+                    points.sort_by(|a, b| a.bounds().lower.partial_cmp(&b.bounds().lower).unwrap());
 
                     points
                         .chunks(group_size.iter().product())
